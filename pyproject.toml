@@ -1,0 +1,23 @@
+[project]
+name = "crypto-forecast"
+version = "0.1.0"
+description = "Chronos-2 finetuning and inference workflow for crypto log-return forecasting"
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.2,<3",
+  "numpy>=1.21,<3",
+  "pandas>=2.0,<2.4",
+  "pyarrow>=14,<20",
+  "PyYAML>=6.0,<7",
+  "wandb>=0.18,<1",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

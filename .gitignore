@@ -1,0 +1,48 @@
+# Runtime outputs
+outputs/
+wandb/
+
+# Local data artifacts (keep raw data outside repo; track code/config only)
+data/processed/
+data/artifacts/
+*.parquet
+*.arrow
+
+# Python cache / build
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+
+# Test / lint / coverage caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Notebook / editor junk
+.ipynb_checkpoints/
+.DS_Store
+*.swp
+*.swo
+
+# Logs / temp
+*.log
+*.out
+*.err
+tmp/
+temp/
+
+# Virtual env / local env files
+.venv/
+venv/
+env/
+.env
+.env.*
+

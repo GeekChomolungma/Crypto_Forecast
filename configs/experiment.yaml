@@ -1,0 +1,70 @@
+project:
+  name: crypto_forecast
+  seed: 42
+  run_name: bmark_chronos2_logret_v1
+
+paths:
+  raw_dir: /gpfs/work5/0/prjs1859/market_info
+  processed_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/data/processed
+  checkpoints_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/outputs/checkpoints
+  predictions_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/outputs/predictions
+
+# Data conversion + modeling scope
+universe:
+  file_pattern: "*_1d_Binance.csv"
+  symbols: []  # empty means use all matched files
+
+data:
+  timestamp_col: starttime
+  symbol_col: symbol
+  target_price_col: close
+  keep_feature_cols:
+    - open
+    - high
+    - low
+    - close
+    - volume
+    - quotevolume
+    - activebuyvolume
+    - activebuyquotevolume
+    - tradenum
+  min_history: 200
+  freq: "1D"
+
+split:
+  train_end: "2022-12-31"
+  val_end: "2024-12-31"
+  # test is (val_end, +inf)
+
+model:
+  model_id: amazon/chronos-2
+  device_map: cuda
+  torch_dtype: bfloat16
+  init_mode: pretrained   # pretrained | random
+  loss_mode: native       # native | custom (placeholder wiring)
+  context_length: 1024
+  prediction_length: 3    # this is the "horizon" for forecasting, i.e., how many steps into the future to predict
+  quantile_levels: [0.1, 0.5, 0.9]
+  cross_learning: true
+
+train:
+  enabled: true
+  batch_size: 128
+  learning_rate: 1.0e-5
+  num_steps: 1500
+  finetune_mode: full
+  finetuned_ckpt_name: finetuned-ckpt
+  remove_printer_callback: true
+
+wandb:
+  enabled: true
+  project: crypto_forecast
+  entity: 574817827-university-of-amsterdam
+  tags: [chronos2, logreturn, fullshot]
+
+infer:
+  enabled: true
+  horizon: 1
+  include_multi_horizon: false
+  ckpt_subdir: null   # if null, use <checkpoints_dir>/<run_name>/finetuned-ckpt
+  batch_size: 64

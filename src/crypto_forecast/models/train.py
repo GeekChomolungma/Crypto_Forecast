@@ -25,6 +25,17 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
         val_end=split_cfg["val_end"],
         train_start=split_cfg.get("train_start"),
     )
+    if len(split.train_df) == 0:
+        ts_min = df["timestamp"].min() if "timestamp" in df.columns and len(df) > 0 else None
+        ts_max = df["timestamp"].max() if "timestamp" in df.columns and len(df) > 0 else None
+        raise ValueError(
+            "Train split is empty before task construction. "
+            f"data_ts_range=[{ts_min}, {ts_max}], "
+            f"train_start={split_cfg.get('train_start')}, "
+            f"train_end={split_cfg['train_end']}, "
+            f"val_end={split_cfg['val_end']}. "
+            "Please verify timestamp parsing and split boundaries."
+        )
 
     data_cfg = cfg["data"]
     cov_cols = list(data_cfg["keep_feature_cols"])

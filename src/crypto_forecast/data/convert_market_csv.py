@@ -21,13 +21,49 @@ NUMERIC_FALLBACK_COLS = [
 ]
 
 
+def _parse_timestamp_col(series: pd.Series) -> pd.Series:
+    """
+    Parse timestamp column with tolerant unit detection.
+
+    Supports common epoch units (s/ms/us/ns). Also supports compact values
+    observed in some cleaned crypto files where starttime is stored as
+    `epoch_ms // 1_000_000` (e.g. 1502928), which needs to be scaled back.
+    """
+    numeric = pd.to_numeric(series, errors="coerce")
+    if numeric.notna().sum() == 0:
+        return pd.to_datetime(series, utc=True, errors="coerce")
+
+    max_abs = float(numeric.abs().max())
+    ts_numeric = numeric
+    unit = "s"
+
+    if max_abs >= 1e17:
+        unit = "ns"
+    elif max_abs >= 1e14:
+        unit = "us"
+    elif max_abs >= 1e11:
+        unit = "ms"
+    elif max_abs >= 1e9:
+        unit = "s"
+    elif max_abs >= 1e6:
+        # Compact timestamp format: epoch_ms reduced by 1e6.
+        ts_numeric = numeric * 1_000_000
+        unit = "ms"
+
+    ts = pd.to_datetime(ts_numeric, unit=unit, utc=True, errors="coerce")
+    if ts.isna().all():
+        return pd.to_datetime(series, utc=True, errors="coerce")
+    return ts
+
+
 def _load_one_csv(path: Path, ts_col: str, symbol_col: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     if ts_col not in df.columns:
         raise ValueError(f"{path} missing timestamp column: {ts_col}")
 
-    # Binance starttime is in milliseconds.
-    df["timestamp"] = pd.to_datetime(df[ts_col], unit="ms", utc=True)
+    df["timestamp"] = _parse_timestamp_col(df[ts_col])
+    if df["timestamp"].isna().all():
+        raise ValueError(f"{path} timestamp parse failed for column: {ts_col}")
 
     if symbol_col not in df.columns:
         # fallback: infer from filename prefix

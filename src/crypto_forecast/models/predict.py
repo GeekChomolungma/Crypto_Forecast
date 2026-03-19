@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+import re
 
 import pandas as pd
 import torch
@@ -22,34 +23,141 @@ class DecisionAlignedRow:
 ModelSource = Literal["local", "hf"]
 
 
-def _default_ckpt_path(cfg: dict[str, Any]) -> Path:
-    run_name = cfg["project"]["run_name"]
+@dataclass
+class ParsedRunName:
+    base_run_name: str
+    weight_symbol: str
+    init_mode: str
+    loss_mode: str
+    run_tag: str
+    timestamp: str
+    run_dir: Path
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-").lower() or "unknown"
+
+
+def _parse_run_dir_name(run_dir: Path) -> ParsedRunName | None:
+    parts = run_dir.name.split("__")
+    # <base_run_name>__<SYMBOL>__<INIT_MODE>__<LOSS_MODE>__<RUN_TAG>__<TIMESTAMP>
+    if len(parts) < 6:
+        return None
+    base = "__".join(parts[:-5])
+    if not base:
+        return None
+    return ParsedRunName(
+        base_run_name=base,
+        weight_symbol=parts[-5],
+        init_mode=parts[-4],
+        loss_mode=parts[-3],
+        run_tag=parts[-2],
+        timestamp=parts[-1],
+        run_dir=run_dir,
+    )
+
+
+def _latest_or_specific_local_ckpt_path(
+    cfg: dict[str, Any],
+    weight_symbol: str | None,
+    init_mode: str | None,
+    loss_mode: str | None,
+    ckpt_timestamp: str | None,
+    run_tag: str | None,
+) -> tuple[Path, str]:
+    ckpt_root = Path(cfg["paths"]["checkpoints_dir"])
+    finetuned_ckpt_name = cfg["train"]["finetuned_ckpt_name"]
+    base_run_name = cfg["project"]["run_name"]
+
+    candidates: list[ParsedRunName] = []
+    if ckpt_root.exists():
+        for run_dir in ckpt_root.iterdir():
+            if not run_dir.is_dir():
+                continue
+            parsed = _parse_run_dir_name(run_dir)
+            if parsed is None:
+                continue
+            if not (run_dir / finetuned_ckpt_name).exists():
+                continue
+            if parsed.base_run_name != base_run_name:
+                continue
+            if weight_symbol and parsed.weight_symbol != weight_symbol:
+                continue
+            if init_mode and parsed.init_mode != init_mode:
+                continue
+            if loss_mode and parsed.loss_mode != loss_mode:
+                continue
+            if run_tag and parsed.run_tag != run_tag:
+                continue
+            if ckpt_timestamp and parsed.timestamp != ckpt_timestamp:
+                continue
+            candidates.append(parsed)
+
+    if candidates:
+        chosen = sorted(candidates, key=lambda x: x.timestamp)[-1]
+        return chosen.run_dir / finetuned_ckpt_name, chosen.timestamp
+
+    requested_filtered_search = any([weight_symbol, init_mode, loss_mode, ckpt_timestamp, run_tag])
+    if requested_filtered_search:
+        raise FileNotFoundError(
+            "No local finetuned checkpoint matched filters under "
+            f"{ckpt_root}. filters="
+            f"(base_run_name={base_run_name}, weight_symbol={weight_symbol}, "
+            f"init_mode={init_mode}, loss_mode={loss_mode}, run_tag={run_tag}, "
+            f"ckpt_timestamp={ckpt_timestamp})"
+        )
+
+    # Backward-compatible fallback to explicit ckpt_subdir/default legacy path.
     ckpt_subdir = cfg["infer"].get("ckpt_subdir")
     if ckpt_subdir:
-        return Path(cfg["paths"]["checkpoints_dir"]) / ckpt_subdir
-    return Path(cfg["paths"]["checkpoints_dir"]) / run_name / cfg["train"]["finetuned_ckpt_name"]
+        fallback = ckpt_root / ckpt_subdir
+    else:
+        fallback = ckpt_root / base_run_name / finetuned_ckpt_name
+    if not fallback.exists():
+        raise FileNotFoundError(
+            "Default local checkpoint path does not exist. "
+            f"checked={fallback}. "
+            "Set infer.ckpt_subdir, or pass explicit --model-ref, or provide local checkpoint filters."
+        )
+    return fallback, "unknown"
 
 
 def _resolve_model_ref(
     cfg: dict[str, Any],
     model_source: ModelSource,
     model_ref: str | None = None,
+    weight_symbol: str | None = None,
+    init_mode: str | None = None,
+    loss_mode: str | None = None,
+    ckpt_timestamp: str | None = None,
+    run_tag: str | None = None,
 ) -> str:
     """
-    Resolve the actual model reference for Chronos2Pipeline.from_pretrained().
+    Resolve model reference for Chronos2Pipeline.from_pretrained().
 
-    Priority:
-    1) explicit `model_ref` argument (local path or HF model id)
-    2) `model_source == "local"`: use default fine-tuned checkpoint path
-    3) `model_source == "hf"`: use infer.hf_model_id, fallback to model.model_id
+    Note:
+    - run_infer.py handles loading-mode priority and may pass `model_ref=None`
+      for local/hf modes by design.
+    - `model_ref` is used here only when manual mode passes it through.
     """
     if model_ref:
         return model_ref
 
+    # Local finetuned checkpoint resolution (latest or specific timestamp).
     if model_source == "local":
-        return str(_default_ckpt_path(cfg))
+        local_ref, _ = _latest_or_specific_local_ckpt_path(
+            cfg=cfg,
+            weight_symbol=weight_symbol,
+            init_mode=init_mode,
+            loss_mode=loss_mode,
+            ckpt_timestamp=ckpt_timestamp,
+            run_tag=run_tag,
+        )
+        return str(local_ref)
+
+    # HF zero-shot resolution.
     else:  # model_source == "hf"
-        # HuggingFace mode defaults to infer.hf_model_id then model.model_id
+        # Defaults to infer.hf_model_id then model.model_id
         return str(cfg["infer"].get("hf_model_id") or cfg["model"]["model_id"])
 
 
@@ -67,6 +175,12 @@ def generate_decision_aligned_predictions(
     processed_path: Path,
     model_source: ModelSource = "local",
     model_ref: str | None = None,
+    weight_symbol: str | None = None,
+    infer_symbol: str | None = None,
+    init_mode: str | None = None,
+    loss_mode: str | None = None,
+    ckpt_timestamp: str | None = None,
+    run_tag: str | None = None,
     output_tag: str | None = None,
 ) -> Path:
     infer_cfg = cfg["infer"]
@@ -88,7 +202,27 @@ def generate_decision_aligned_predictions(
 
     _ = history_df  # reserved for future explicit history/test slicing controls
 
-    resolved_model_ref = _resolve_model_ref(cfg=cfg, model_source=model_source, model_ref=model_ref)
+    resolved_ckpt_timestamp = "na"
+    if model_source == "local" and model_ref is None:
+        _, resolved_ckpt_timestamp = _latest_or_specific_local_ckpt_path(
+            cfg=cfg,
+            weight_symbol=weight_symbol,
+            init_mode=init_mode,
+            loss_mode=loss_mode,
+            ckpt_timestamp=ckpt_timestamp,
+            run_tag=run_tag,
+        )
+
+    resolved_model_ref = _resolve_model_ref(
+        cfg=cfg,
+        model_source=model_source,
+        model_ref=model_ref,
+        weight_symbol=weight_symbol,
+        init_mode=init_mode,
+        loss_mode=loss_mode,
+        ckpt_timestamp=ckpt_timestamp,
+        run_tag=run_tag,
+    )
     pipeline = _load_pipeline(cfg, resolved_model_ref)
 
     horizon = int(infer_cfg["horizon"])
@@ -159,14 +293,39 @@ def generate_decision_aligned_predictions(
 
             rows.append(row)
 
-    base_name = cfg["project"]["run_name"]
-    source_suffix = "zeroshot_hf" if model_source == "hf" else "finetuned_local"
-    out_name = f"{base_name}__{source_suffix}"
+    target_symbol = infer_symbol or weight_symbol or "unknown"
+    run_ts = pd.Timestamp.utcnow().strftime("%Y%m%d_%H%M%S")
+    # Output naming is intentionally explicit for downstream filtering.
+    if model_source == "hf":
+        hf_ref = model_ref or cfg["infer"].get("hf_model_id") or cfg["model"]["model_id"]
+        out_name = f"infer__hf__{_slug(str(hf_ref))}__target_{_slug(target_symbol)}__{run_ts}"
+    else:
+        w_sym = _slug(weight_symbol or "unknown")
+        i_mode = _slug(init_mode or cfg["model"].get("init_mode", "unknown"))
+        l_mode = _slug(loss_mode or cfg["model"].get("loss_mode", "unknown"))
+        ckpt_ts = _slug(resolved_ckpt_timestamp)
+        out_name = (
+            f"infer__ft__w_{w_sym}__i_{i_mode}__l_{l_mode}"
+            f"__ckpt_{ckpt_ts}__target_{_slug(target_symbol)}__{run_ts}"
+        )
     if output_tag:
-        out_name = f"{out_name}__{output_tag}"
+        out_name = f"{out_name}__tag_{_slug(output_tag)}"
+
+    file_target = _slug(target_symbol)
+    file_init_mode = _slug(init_mode or cfg["model"].get("init_mode", "na"))
+    file_loss_mode = _slug(loss_mode or cfg["model"].get("loss_mode", "na"))
+    file_run_tag = _slug(run_tag or output_tag or "na")
+
+    filename = (
+        f"predictions_decision_aligned"
+        f"__target_{file_target}"
+        f"__init_{file_init_mode}"
+        f"__loss_{file_loss_mode}"
+        f"__tag_{file_run_tag}.csv"
+    )
 
     out_dir = ensure_dir(Path(cfg["paths"]["predictions_dir"]) / out_name)
-    out_path = out_dir / f"{output_tag}_predictions_decision_aligned.csv"
+    out_path = out_dir / filename
     out_df = pd.DataFrame(rows).sort_values(["symbol", "ts_decision"]).reset_index(drop=True)
     out_df.to_csv(out_path, index=False)
     return out_path

@@ -1,17 +1,17 @@
 project:
   name: crypto_forecast
   seed: 42
-  run_name: bmark_chronos2_logret_v1
+  run_name: chronos2_logret
 
 paths:
-  raw_dir: /gpfs/work5/0/prjs1859/market_info
+  raw_dir: /gpfs/work5/0/prjs1859/market_info/cleaned
   processed_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/data/processed
   checkpoints_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/outputs/checkpoints
   predictions_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/outputs/predictions
 
 # Data conversion + modeling scope
 universe:
-  file_pattern: "*_1d_Binance.csv"
+  file_pattern: "*_1d_Binance_cleaned.csv"
   symbols: []  # empty means use all matched files
 
 data:
@@ -28,10 +28,12 @@ data:
     - activebuyvolume
     - activebuyquotevolume
     - tradenum
-  min_history: 200
+    - target_logreturn
+  min_history: 30
   freq: "1D"
 
 split:
+  train_start: "2017-01-01"
   train_end: "2022-12-31"
   val_end: "2024-12-31"
   # test is (val_end, +inf)
@@ -43,9 +45,9 @@ model:
   init_mode: pretrained   # pretrained | random
   loss_mode: native       # native | custom (placeholder wiring)
   context_length: 1024
-  prediction_length: 3    # this is the "horizon" for forecasting, i.e., how many steps into the future to predict
-  quantile_levels: [0.1, 0.5, 0.9]
-  cross_learning: true
+  prediction_length: 3    # this is the "horizon" for train, i.e., how many steps into the future to predict
+  quantile_levels: [0.1, 0.2, 0.8, 0.9]
+  cross_learning: false
 
 train:
   enabled: true
@@ -64,6 +66,8 @@ wandb:
 
 infer:
   enabled: true
+  model_source: local      # local | hf
+  hf_model_id: amazon/chronos-2
   horizon: 1
   include_multi_horizon: false
   ckpt_subdir: null   # if null, use <checkpoints_dir>/<run_name>/finetuned-ckpt

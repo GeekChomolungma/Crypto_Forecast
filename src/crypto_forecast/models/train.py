@@ -19,7 +19,12 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
 
     df = pd.read_parquet(processed_path)
     split_cfg = cfg["split"]
-    split = split_by_time(df, train_end=split_cfg["train_end"], val_end=split_cfg["val_end"])
+    split = split_by_time(
+        df,
+        train_end=split_cfg["train_end"],
+        val_end=split_cfg["val_end"],
+        train_start=split_cfg.get("train_start"),
+    )
 
     data_cfg = cfg["data"]
     cov_cols = list(data_cfg["keep_feature_cols"])

@@ -44,6 +44,22 @@ python -m crypto_forecast.pipelines.run_finetune --config configs/experiment.yam
 python -m crypto_forecast.pipelines.run_infer --config configs/experiment.yaml
 ```
 
+Common inference variants:
+
+```bash
+# Local fine-tuned checkpoint (default mode)
+python -m crypto_forecast.pipelines.run_infer \
+  --config configs/experiment.yaml \
+  --model-source local
+
+# Zero-shot from HuggingFace Chronos-2
+python -m crypto_forecast.pipelines.run_infer \
+  --config configs/experiment.yaml \
+  --model-source hf \
+  --model-ref amazon/chronos-2 \
+  --output-tag zeroshot
+```
+
 ## Output contracts
 
 - Checkpoints: `outputs/checkpoints/<run_name>/finetuned-ckpt`
@@ -106,3 +122,23 @@ For each experiment, keep a short note with:
 - W&B run URL
 - output prediction file path
 - key metrics produced by your external testbed
+
+## Batch scripts
+
+Scripts are in `scripts/`:
+
+- `scripts/zero_shot_single.sh`: run one zero-shot inference job
+- `scripts/zero_shot_batch.sh`: batch over all per-symbol parquet files in `data/processed`
+- `scripts/sbatch_zero_shot_single.sbatch`: submit single zero-shot job via Slurm
+- `scripts/sbatch_zero_shot_batch.sbatch`: submit batch zero-shot job via Slurm
+
+Examples:
+
+```bash
+bash scripts/zero_shot_single.sh configs/experiment.yaml /gpfs/work5/0/prjs1859/Crypto_Forecast/data/processed/BTCUSDT_1d_logreturn.parquet
+bash scripts/zero_shot_batch.sh configs/experiment.yaml /gpfs/work5/0/prjs1859/Crypto_Forecast/data/processed
+
+# Slurm submission
+sbatch scripts/sbatch_zero_shot_single.sbatch configs/experiment.yaml /gpfs/work5/0/prjs1859/Crypto_Forecast/data/processed/BTCUSDT_1d_logreturn.parquet
+sbatch scripts/sbatch_zero_shot_batch.sbatch configs/experiment.yaml /gpfs/work5/0/prjs1859/Crypto_Forecast/data/processed
+```

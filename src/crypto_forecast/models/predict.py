@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 from typing import Any, Literal
 import re
@@ -29,8 +30,9 @@ class ParsedRunName:
     weight_symbol: str
     init_mode: str
     loss_mode: str
+    loss_signature: str | None
     run_tag: str
-    timestamp: str
+    timestamp: str | None
     run_dir: Path
 
 
@@ -38,11 +40,51 @@ def _slug(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-").lower() or "unknown"
 
 
+def _canonical_loss_mode(text: str) -> str:
+    return text
+
+
 def _parse_run_dir_name(run_dir: Path) -> ParsedRunName | None:
     parts = run_dir.name.split("__")
-    # <base_run_name>__<SYMBOL>__<INIT_MODE>__<LOSS_MODE>__<RUN_TAG>__<TIMESTAMP>
     if len(parts) < 6:
         return None
+
+    # New stable format (without timestamp):
+    # <base>__<SYMBOL>__<INIT_MODE>__<LOSS_MODE>__lsig_<SIGNATURE>__tag_<RUN_TAG>
+    if parts[-1].startswith("tag_") and parts[-2].startswith("lsig_"):
+        base = "__".join(parts[:-5])
+        if not base:
+            return None
+        return ParsedRunName(
+            base_run_name=base,
+            weight_symbol=parts[-5],
+            init_mode=parts[-4],
+            loss_mode=parts[-3],
+            loss_signature=parts[-2].removeprefix("lsig_"),
+            run_tag=parts[-1].removeprefix("tag_"),
+            timestamp=None,
+            run_dir=run_dir,
+        )
+
+    # New format with optional trailing timestamp:
+    # <base>__<SYMBOL>__<INIT_MODE>__<LOSS_MODE>__lsig_<SIGNATURE>__tag_<RUN_TAG>__<TIMESTAMP>
+    if len(parts) >= 7 and parts[-2].startswith("tag_") and parts[-3].startswith("lsig_"):
+        base = "__".join(parts[:-6])
+        if not base:
+            return None
+        return ParsedRunName(
+            base_run_name=base,
+            weight_symbol=parts[-6],
+            init_mode=parts[-5],
+            loss_mode=parts[-4],
+            loss_signature=parts[-3].removeprefix("lsig_"),
+            run_tag=parts[-2].removeprefix("tag_"),
+            timestamp=parts[-1],
+            run_dir=run_dir,
+        )
+
+    # Legacy format:
+    # <base_run_name>__<SYMBOL>__<INIT_MODE>__<LOSS_MODE>__<RUN_TAG>__<TIMESTAMP>
     base = "__".join(parts[:-5])
     if not base:
         return None
@@ -51,10 +93,26 @@ def _parse_run_dir_name(run_dir: Path) -> ParsedRunName | None:
         weight_symbol=parts[-5],
         init_mode=parts[-4],
         loss_mode=parts[-3],
+        loss_signature=None,
         run_tag=parts[-2],
         timestamp=parts[-1],
         run_dir=run_dir,
     )
+
+
+def _manifest_loss_signature(run_dir: Path) -> str | None:
+    manifest_path = run_dir / "run_manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        with manifest_path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception:
+        return None
+    raw = payload.get("loss_signature")
+    if raw is None:
+        return None
+    return str(raw)
 
 
 def _latest_or_specific_local_ckpt_path(
@@ -62,6 +120,7 @@ def _latest_or_specific_local_ckpt_path(
     weight_symbol: str | None,
     init_mode: str | None,
     loss_mode: str | None,
+    loss_signature: str | None,
     ckpt_timestamp: str | None,
     run_tag: str | None,
 ) -> tuple[Path, str]:
@@ -85,8 +144,12 @@ def _latest_or_specific_local_ckpt_path(
                 continue
             if init_mode and parsed.init_mode != init_mode:
                 continue
-            if loss_mode and parsed.loss_mode != loss_mode:
+            if loss_mode and _canonical_loss_mode(parsed.loss_mode) != _canonical_loss_mode(loss_mode):
                 continue
+            if loss_signature:
+                resolved_signature = parsed.loss_signature or _manifest_loss_signature(run_dir)
+                if resolved_signature != loss_signature:
+                    continue
             if run_tag and parsed.run_tag != run_tag:
                 continue
             if ckpt_timestamp and parsed.timestamp != ckpt_timestamp:
@@ -94,16 +157,24 @@ def _latest_or_specific_local_ckpt_path(
             candidates.append(parsed)
 
     if candidates:
-        chosen = sorted(candidates, key=lambda x: x.timestamp)[-1]
-        return chosen.run_dir / finetuned_ckpt_name, chosen.timestamp
+        def _candidate_key(candidate: ParsedRunName) -> tuple[str, float]:
+            ts = candidate.timestamp or ""
+            try:
+                mtime = candidate.run_dir.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            return ts, mtime
 
-    requested_filtered_search = any([weight_symbol, init_mode, loss_mode, ckpt_timestamp, run_tag])
+        chosen = sorted(candidates, key=_candidate_key)[-1]
+        return chosen.run_dir / finetuned_ckpt_name, (chosen.timestamp or "stable")
+
+    requested_filtered_search = any([weight_symbol, init_mode, loss_mode, loss_signature, ckpt_timestamp, run_tag])
     if requested_filtered_search:
         raise FileNotFoundError(
             "No local finetuned checkpoint matched filters under "
             f"{ckpt_root}. filters="
             f"(base_run_name={base_run_name}, weight_symbol={weight_symbol}, "
-            f"init_mode={init_mode}, loss_mode={loss_mode}, run_tag={run_tag}, "
+            f"init_mode={init_mode}, loss_mode={loss_mode}, loss_signature={loss_signature}, run_tag={run_tag}, "
             f"ckpt_timestamp={ckpt_timestamp})"
         )
 
@@ -129,6 +200,7 @@ def _resolve_model_ref(
     weight_symbol: str | None = None,
     init_mode: str | None = None,
     loss_mode: str | None = None,
+    loss_signature: str | None = None,
     ckpt_timestamp: str | None = None,
     run_tag: str | None = None,
 ) -> str:
@@ -150,6 +222,7 @@ def _resolve_model_ref(
             weight_symbol=weight_symbol,
             init_mode=init_mode,
             loss_mode=loss_mode,
+            loss_signature=loss_signature,
             ckpt_timestamp=ckpt_timestamp,
             run_tag=run_tag,
         )
@@ -179,6 +252,7 @@ def generate_decision_aligned_predictions(
     infer_symbol: str | None = None,
     init_mode: str | None = None,
     loss_mode: str | None = None,
+    loss_signature: str | None = None,
     ckpt_timestamp: str | None = None,
     run_tag: str | None = None,
     output_tag: str | None = None,
@@ -209,6 +283,7 @@ def generate_decision_aligned_predictions(
             weight_symbol=weight_symbol,
             init_mode=init_mode,
             loss_mode=loss_mode,
+            loss_signature=loss_signature,
             ckpt_timestamp=ckpt_timestamp,
             run_tag=run_tag,
         )
@@ -220,6 +295,7 @@ def generate_decision_aligned_predictions(
         weight_symbol=weight_symbol,
         init_mode=init_mode,
         loss_mode=loss_mode,
+        loss_signature=loss_signature,
         ckpt_timestamp=ckpt_timestamp,
         run_tag=run_tag,
     )
@@ -303,10 +379,11 @@ def generate_decision_aligned_predictions(
         w_sym = _slug(weight_symbol or "unknown")
         i_mode = _slug(init_mode or cfg["model"].get("init_mode", "unknown"))
         l_mode = _slug(loss_mode or cfg["model"].get("loss_mode", "unknown"))
+        l_sig = _slug(loss_signature or "any")
         ckpt_ts = _slug(resolved_ckpt_timestamp)
         out_name = (
             f"infer__ft__w_{w_sym}__i_{i_mode}__l_{l_mode}"
-            f"__ckpt_{ckpt_ts}__target_{_slug(target_symbol)}__{run_ts}"
+            f"__lsig_{l_sig}__ckpt_{ckpt_ts}__target_{_slug(target_symbol)}__{run_ts}"
         )
     if output_tag:
         out_name = f"{out_name}__tag_{_slug(output_tag)}"
@@ -314,6 +391,7 @@ def generate_decision_aligned_predictions(
     file_target = _slug(target_symbol)
     file_init_mode = _slug(init_mode or cfg["model"].get("init_mode", "na"))
     file_loss_mode = _slug(loss_mode or cfg["model"].get("loss_mode", "na"))
+    file_loss_signature = _slug(loss_signature or "any")
     file_run_tag = _slug(run_tag or output_tag or "na")
 
     filename = (
@@ -321,6 +399,7 @@ def generate_decision_aligned_predictions(
         f"__target_{file_target}"
         f"__init_{file_init_mode}"
         f"__loss_{file_loss_mode}"
+        f"__lsig_{file_loss_signature}"
         f"__tag_{file_run_tag}.csv"
     )
 

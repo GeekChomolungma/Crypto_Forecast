@@ -43,7 +43,14 @@ model:
   device_map: cuda
   torch_dtype: bfloat16
   init_mode: pretrained   # pretrained | random
-  loss_mode: native       # native | custom (placeholder wiring)
+  loss_mode: native       # native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid
+  loss_params:
+    loss_quantile_extreme_gamma: 2.0
+    loss_quantile_extreme_power: 2.0
+    loss_time_decay: 0.8
+    loss_magnitude_alpha: 1.0
+    loss_directional_lambda: 0.2
+    loss_directional_temperature: 0.1
   context_length: 1024
   prediction_length: 3    # this is the "horizon" for train, i.e., how many steps into the future to predict
   quantile_levels: [0.1, 0.2, 0.8, 0.9]

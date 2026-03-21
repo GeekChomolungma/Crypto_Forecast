@@ -117,9 +117,15 @@ def main() -> None:
     local_group.add_argument(
         "--loss-mode",
         type=str,
-        choices=["native", "custom"],
+        choices=["native", "weighted_extreme_time_decay", "magnitude_weighted", "directional_hybrid"],
         default=None,
         help="Loss mode used to filter local finetuned checkpoints.",
+    )
+    local_group.add_argument(
+        "--loss-signature",
+        type=str,
+        default=None,
+        help="Optional exact loss signature filter for local finetuned checkpoint selection.",
     )
     local_group.add_argument(
         "--ckpt-timestamp",
@@ -199,6 +205,7 @@ def main() -> None:
         infer_symbol=infer_symbol,
         init_mode=args.init_mode,
         loss_mode=args.loss_mode,
+        loss_signature=args.loss_signature,
         ckpt_timestamp=args.ckpt_timestamp,
         run_tag=args.run_tag,
         output_tag=args.output_tag,

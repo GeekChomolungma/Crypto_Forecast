@@ -18,11 +18,12 @@ MODEL_SOURCE="${2:-local}"              # local | hf
 WEIGHT_SYMBOL="${3:-BTCUSDT}"           # used for checkpoint selection when local
 INFER_SYMBOL="${4:-${WEIGHT_SYMBOL}}"   # target parquet symbol
 INIT_MODE="${5:-pretrained}"            # pretrained | random
-LOSS_MODE="${6:-native}"                # native | custom
+LOSS_MODE="${6:-native}"                # native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid
 CKPT_TIMESTAMP="${7:-latest}"           # latest | YYYYmmdd_HHMMSS
 RUN_TAG="${8:-}"                        # optional
 HF_MODEL_ID="${9:-amazon/chronos-2}"    # used when hf
 OUTPUT_TAG="${10:-manual}"
+LOSS_SIGNATURE="${11:-}"                # optional exact local checkpoint signature filter
 
 if [[ "${MODEL_SOURCE}" != "local" && "${MODEL_SOURCE}" != "hf" ]]; then
   echo "[infer] invalid MODEL_SOURCE=${MODEL_SOURCE}, expected local|hf" >&2
@@ -53,6 +54,9 @@ if [[ "${MODEL_SOURCE}" == "local" ]]; then
     --init-mode "${INIT_MODE}"
     --loss-mode "${LOSS_MODE}"
   )
+  if [[ -n "${LOSS_SIGNATURE}" ]]; then
+    cmd+=(--loss-signature "${LOSS_SIGNATURE}")
+  fi
 
   if [[ "${CKPT_TIMESTAMP}" != "latest" ]]; then
     cmd+=(--ckpt-timestamp "${CKPT_TIMESTAMP}")

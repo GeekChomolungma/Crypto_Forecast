@@ -14,7 +14,18 @@ def main() -> None:
     parser.add_argument("--processed", type=str, default=None)
     parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument("--init-mode", type=str, choices=["pretrained", "random"], default=None)
-    parser.add_argument("--loss-mode", type=str, choices=["native", "custom"], default=None)
+    parser.add_argument(
+        "--loss-mode",
+        type=str,
+        choices=["native", "weighted_extreme_time_decay", "magnitude_weighted", "directional_hybrid"],
+        default=None,
+    )
+    parser.add_argument("--loss-quantile-extreme-gamma", type=float, default=None)
+    parser.add_argument("--loss-quantile-extreme-power", type=float, default=None)
+    parser.add_argument("--loss-time-decay", type=float, default=None)
+    parser.add_argument("--loss-magnitude-alpha", type=float, default=None)
+    parser.add_argument("--loss-directional-lambda", type=float, default=None)
+    parser.add_argument("--loss-directional-temperature", type=float, default=None)
     args = parser.parse_args()
 
     cfg = deepcopy(load_config(args.config))
@@ -24,6 +35,19 @@ def main() -> None:
         cfg["model"]["init_mode"] = args.init_mode
     if args.loss_mode:
         cfg["model"]["loss_mode"] = args.loss_mode
+    cfg["model"].setdefault("loss_params", {})
+    if args.loss_quantile_extreme_gamma is not None:
+        cfg["model"]["loss_params"]["loss_quantile_extreme_gamma"] = args.loss_quantile_extreme_gamma
+    if args.loss_quantile_extreme_power is not None:
+        cfg["model"]["loss_params"]["loss_quantile_extreme_power"] = args.loss_quantile_extreme_power
+    if args.loss_time_decay is not None:
+        cfg["model"]["loss_params"]["loss_time_decay"] = args.loss_time_decay
+    if args.loss_magnitude_alpha is not None:
+        cfg["model"]["loss_params"]["loss_magnitude_alpha"] = args.loss_magnitude_alpha
+    if args.loss_directional_lambda is not None:
+        cfg["model"]["loss_params"]["loss_directional_lambda"] = args.loss_directional_lambda
+    if args.loss_directional_temperature is not None:
+        cfg["model"]["loss_params"]["loss_directional_temperature"] = args.loss_directional_temperature
 
     processed_path = (
         Path(args.processed)

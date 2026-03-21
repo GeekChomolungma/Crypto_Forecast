@@ -39,11 +39,12 @@ python -c "import torch; print('torch ok', torch.__version__)"
 #   $3 weight_symbol
 #   $4 infer_symbol
 #   $5 init_mode (pretrained|random)
-#   $6 loss_mode (native|custom)
+#   $6 loss_mode (native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid)
 #   $7 ckpt_timestamp (latest|YYYYmmdd_HHMMSS)
 #   $8 run_tag
 #   $9 hf_model_id
 #   $10 output_tag
+#   $11 loss_signature (optional exact local checkpoint signature filter)
 cd "${PROJECT_DIR}"
 bash scripts/infer/infer_single.sh \
   "${1:-configs/experiment.yaml}" \
@@ -55,4 +56,5 @@ bash scripts/infer/infer_single.sh \
   "${7:-latest}" \
   "${8:-}" \
   "${9:-amazon/chronos-2}" \
-  "${10:-manual}"
+  "${10:-manual}" \
+  "${11:-}"

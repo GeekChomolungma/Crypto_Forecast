@@ -66,7 +66,7 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
     train_cfg = cfg["train"]
     wandb_cfg = cfg["wandb"]
 
-    loss_state = apply_loss_mode(model_cfg["loss_mode"])
+    loss_state = apply_loss_mode(str(model_cfg["loss_mode"]), model_cfg=model_cfg)
 
     pipeline = build_pipeline(
         init_mode=model_cfg["init_mode"],
@@ -108,6 +108,13 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
         output_dir=ckpt_root,
         finetuned_ckpt_name=train_cfg["finetuned_ckpt_name"],
         remove_printer_callback=bool(train_cfg["remove_printer_callback"]),
+        loss_type=loss_state.loss_type,
+        loss_quantile_extreme_gamma=float(loss_state.loss_params["loss_quantile_extreme_gamma"]),
+        loss_quantile_extreme_power=float(loss_state.loss_params["loss_quantile_extreme_power"]),
+        loss_time_decay=float(loss_state.loss_params["loss_time_decay"]),
+        loss_magnitude_alpha=float(loss_state.loss_params["loss_magnitude_alpha"]),
+        loss_directional_lambda=float(loss_state.loss_params["loss_directional_lambda"]),
+        loss_directional_temperature=float(loss_state.loss_params["loss_directional_temperature"]),
         **extra_trainer_kwargs,
     )
 
@@ -117,10 +124,14 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
         "processed_path": str(processed_path),
         "finetuned_path": str(finetuned_path),
         "loss_mode": model_cfg["loss_mode"],
+        "loss_type": loss_state.loss_type,
+        "loss_signature": loss_state.signature,
+        "loss_params": loss_state.loss_params,
         "loss_mode_state": loss_state.__dict__,
         "init_mode": model_cfg["init_mode"],
         "model_id": model_cfg["model_id"],
         "prediction_length": model_cfg["prediction_length"],
+        "trained_at_utc": pd.Timestamp.utcnow().isoformat(),
         "wandb_enabled": bool(wandb_cfg.get("enabled", False)),
         "wandb_project": os.environ.get("WANDB_PROJECT"),
         "wandb_entity": os.environ.get("WANDB_ENTITY"),

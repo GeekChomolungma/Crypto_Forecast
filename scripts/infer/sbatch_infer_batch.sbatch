@@ -40,11 +40,12 @@ python -c "import torch; print('torch ok', torch.__version__)"
 #   $4 infer_symbols_csv (e.g. BTCUSDT,LTCUSDT,XRPUSDT)
 #      one-to-one mapping: weight_symbols_csv[i] -> infer_symbols_csv[i]
 #   $5 init_mode (pretrained|random)
-#   $6 loss_mode (native|custom)
+#   $6 loss_mode (native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid)
 #   $7 ckpt_timestamp (latest|YYYYmmdd_HHMMSS)
 #   $8 run_tag
 #   $9 hf_model_id
 #   $10 output_tag_base
+#   $11 loss_signature (optional exact local checkpoint signature filter)
 cd "${PROJECT_DIR}"
 bash scripts/infer/infer_batch.sh \
   "${1:-configs/experiment.yaml}" \
@@ -52,8 +53,9 @@ bash scripts/infer/infer_batch.sh \
   "${3:-BTCUSDT,ETHUSDT,DOGEUSDT,BCHUSDT,LTCUSDT,XRPUSDT}" \
   "${4:-BTCUSDT,ETHUSDT,DOGEUSDT,BCHUSDT,LTCUSDT,XRPUSDT}" \
   "${5:-pretrained}" \
-  "${6:-native}" \
+  "${6:-weighted_extreme_time_decay}" \
   "${7:-latest}" \
   "${8:-}" \
   "${9:-amazon/chronos-2}" \
-  "${10:-batch}"
+  "${10:-batch}" \
+  "${11:-qg2_qp2_td0p8_ma1_dl0p2_dt0p1}"

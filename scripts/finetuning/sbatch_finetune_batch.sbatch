@@ -37,12 +37,24 @@ python -c "import torch; print('torch ok', torch.__version__)"
 #   $1 config_path
 #   $2 symbols_csv (e.g. BTCUSDT,ETHUSDT)
 #   $3 init_mode (pretrained|random)
-#   $4 loss_mode (native|custom)
+#   $4 loss_mode (native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid)
 #   $5 run_tag
+#   $6 loss_quantile_extreme_gamma
+#   $7 loss_quantile_extreme_power
+#   $8 loss_time_decay
+#   $9 loss_magnitude_alpha
+#   $10 loss_directional_lambda
+#   $11 loss_directional_temperature
 cd "${PROJECT_DIR}"
 bash scripts/finetuning/finetune_batch.sh \
   "${1:-configs/experiment.yaml}" \
-  "${2:-BNBUSDT,LTCUSDT,XRPUSDT,ZECUSDT}" \
+  "${2:-BTCUSDT,ETHUSDT,DOGEUSDT,BCHUSDT,BNBUSDT,LTCUSDT,XRPUSDT,ZECUSDT}" \
   "${3:-pretrained}" \
-  "${4:-native}" \
-  "${5:-batch}"
+  "${4:-weighted_extreme_time_decay}" \
+  "${5:-batch}" \
+  "${6:-2.0}" \
+  "${7:-2.0}" \
+  "${8:-0.8}" \
+  "${9:-1.0}" \
+  "${10:-0.2}" \
+  "${11:-0.1}"

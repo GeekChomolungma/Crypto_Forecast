@@ -18,11 +18,12 @@ MODEL_SOURCE="${2:-local}"                  # local | hf
 WEIGHT_SYMBOLS_CSV="${3:-BTCUSDT,ETHUSDT}"  # checkpoint symbols, one-to-one with infer symbols
 INFER_SYMBOLS_CSV="${4:-BTCUSDT,ETHUSDT}"   # target symbols for parquet
 INIT_MODE="${5:-pretrained}"                # pretrained | random
-LOSS_MODE="${6:-native}"                    # native | custom
+LOSS_MODE="${6:-native}"                    # native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid
 CKPT_TIMESTAMP="${7:-latest}"               # latest | YYYYmmdd_HHMMSS
 RUN_TAG="${8:-}"                            # optional
 HF_MODEL_ID="${9:-amazon/chronos-2}"        # used when hf
 OUTPUT_TAG_BASE="${10:-batch}"
+LOSS_SIGNATURE="${11:-}"                    # optional exact local checkpoint signature filter
 
 if [[ "${MODEL_SOURCE}" != "local" && "${MODEL_SOURCE}" != "hf" ]]; then
   echo "[infer-batch] invalid MODEL_SOURCE=${MODEL_SOURCE}, expected local|hf" >&2
@@ -74,7 +75,8 @@ for idx in "${!INFER_SYMBOLS[@]}"; do
     "${CKPT_TIMESTAMP}" \
     "${RUN_TAG}" \
     "${HF_MODEL_ID}" \
-    "${output_tag}"
+    "${output_tag}" \
+    "${LOSS_SIGNATURE}"
 
   echo "[infer-batch] done pair=${weight_symbol}->${infer_symbol}"
 done

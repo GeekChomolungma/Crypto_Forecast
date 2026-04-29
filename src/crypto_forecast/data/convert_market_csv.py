@@ -8,6 +8,8 @@ import pandas as pd
 from crypto_forecast.utils.io import ensure_dir
 
 
+SUPPORTED_INTERVALS = {"1d", "4h", "1h", "15m"}
+
 NUMERIC_FALLBACK_COLS = [
     "open",
     "high",
@@ -91,12 +93,16 @@ def convert_raw_to_processed(
     raw_dir: str,
     processed_dir: str,
     file_pattern: str,
+    interval: str,
     symbols: list[str],
     timestamp_col: str,
     symbol_col: str,
     target_price_col: str,
     keep_feature_cols: list[str],
-) -> tuple[Path, list[Path]]:
+) -> list[Path]:
+    if interval not in SUPPORTED_INTERVALS:
+        raise ValueError(f"Unsupported interval={interval!r}. Expected one of: {sorted(SUPPORTED_INTERVALS)}")
+
     raw_root = Path(raw_dir)
     out_root = ensure_dir(processed_dir)
 
@@ -109,7 +115,6 @@ def convert_raw_to_processed(
         raise FileNotFoundError(f"No files matched: dir={raw_dir}, pattern={file_pattern}, symbols={symbols}")
 
     per_symbol_paths: list[Path] = []
-    frames: list[pd.DataFrame] = []
 
     for p in all_files:
         df = _load_one_csv(p, ts_col=timestamp_col, symbol_col=symbol_col)
@@ -122,16 +127,18 @@ def convert_raw_to_processed(
 
         out = df[wanted_cols].copy()
         out = out.dropna(subset=["target_logreturn"]).reset_index(drop=True)
+        if out.empty:
+            continue
 
         symbol = str(out[symbol_col].iloc[0])
-        symbol_path = out_root / f"{symbol}_1d_logreturn.parquet"
+        symbol_path = out_root / f"{symbol}_{interval}_logreturn.parquet"
         out.to_parquet(symbol_path, index=False)
         per_symbol_paths.append(symbol_path)
-        frames.append(out)
 
-    combined = pd.concat(frames, axis=0, ignore_index=True)
-    combined = combined.sort_values([symbol_col, "timestamp"]).reset_index(drop=True)
-    combined_path = out_root / "combined_1d_logreturn.parquet"
-    combined.to_parquet(combined_path, index=False)
+    if not per_symbol_paths:
+        raise ValueError(
+            "No processed symbol files were written. "
+            "All matched files may be empty after target_logreturn NaN removal."
+        )
 
-    return combined_path, per_symbol_paths
+    return per_symbol_paths

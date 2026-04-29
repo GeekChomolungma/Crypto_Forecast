@@ -11,14 +11,15 @@ paths:
 
 # Data conversion + modeling scope
 universe:
-  file_pattern: "*_1d_Binance_cleaned.csv"
+  file_pattern_template: "*_{interval}_Binance_cleaned.csv"
   symbols: []  # empty means use all matched files
 
 data:
+  interval: "1d"  # supported: "1d" | "4h" | "1h" | "15m"
   timestamp_col: starttime
   symbol_col: symbol
   target_price_col: close
-  keep_feature_cols:
+  keep_feature_cols: # most of them are the past_covariates in chronos2
     - open
     - high
     - low
@@ -28,7 +29,7 @@ data:
     - activebuyvolume
     - activebuyquotevolume
     - tradenum
-    - target_logreturn
+    - target_logreturn # this is target_col, so excluded from past_covariates
   min_history: 30
   freq: "1D"
 

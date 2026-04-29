@@ -46,3 +46,5 @@ env/
 .env
 .env.*
 
+# some dependency outside of pip
+external/

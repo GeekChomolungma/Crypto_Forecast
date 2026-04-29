@@ -49,11 +49,11 @@ def split_by_time(
 
 def _to_task_dict(g: pd.DataFrame, target_col: str, cov_cols: list[str]) -> dict[str, Any]:
     target = g[target_col].to_numpy(dtype=np.float32)
-    out: dict[str, Any] = {"target": target}
+    out: dict[str, Any] = {"target": target} # could be like (n_variates, history_length) in chronos predict() inputs dict format, but here we just use 1D as the target col is only logreturn, so (history_length,)
 
     cov_cols = [c for c in cov_cols if c in g.columns and c != target_col]
     if cov_cols:
-        out["past_covariates"] = {c: g[c].to_numpy(dtype=np.float32) for c in cov_cols}
+        out["past_covariates"] = {c: g[c].to_numpy(dtype=np.float32) for c in cov_cols} # a dict, each k-v like: {covariate name : `torch.Tensor` or `np.ndarray` of shape (history_length,)}
 
     return out
 

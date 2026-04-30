@@ -27,6 +27,7 @@ ModelSource = Literal["local", "hf"]
 @dataclass
 class ParsedRunName:
     base_run_name: str
+    interval: str | None
     weight_symbol: str
     init_mode: str
     loss_mode: str
@@ -49,6 +50,82 @@ def _parse_run_dir_name(run_dir: Path) -> ParsedRunName | None:
     if len(parts) < 6:
         return None
 
+    # Current interval-aware script format:
+    # <base>__<SYMBOL>__<INTERVAL>__<INIT_MODE>__<LOSS_MODE>__lsig_<SIGNATURE>__tag_<RUN_TAG>
+    if len(parts) >= 7 and parts[-1].startswith("tag_") and parts[-2].startswith("lsig_"):
+        candidate_interval = parts[-5]
+        if candidate_interval in {"1d", "4h", "1h", "15m"}:
+            base = "__".join(parts[:-6])
+            if not base:
+                return None
+            return ParsedRunName(
+                base_run_name=base,
+                interval=candidate_interval,
+                weight_symbol=parts[-6],
+                init_mode=parts[-4],
+                loss_mode=parts[-3],
+                loss_signature=parts[-2].removeprefix("lsig_"),
+                run_tag=parts[-1].removeprefix("tag_"),
+                timestamp=None,
+                run_dir=run_dir,
+            )
+
+    # Current interval-aware script format with optional trailing timestamp:
+    # <base>__<SYMBOL>__<INTERVAL>__<INIT_MODE>__<LOSS_MODE>__lsig_<SIGNATURE>__tag_<RUN_TAG>__<TIMESTAMP>
+    if len(parts) >= 8 and parts[-2].startswith("tag_") and parts[-3].startswith("lsig_"):
+        candidate_interval = parts[-6]
+        if candidate_interval in {"1d", "4h", "1h", "15m"}:
+            base = "__".join(parts[:-7])
+            if not base:
+                return None
+            return ParsedRunName(
+                base_run_name=base,
+                interval=candidate_interval,
+                weight_symbol=parts[-7],
+                init_mode=parts[-5],
+                loss_mode=parts[-4],
+                loss_signature=parts[-3].removeprefix("lsig_"),
+                run_tag=parts[-2].removeprefix("tag_"),
+                timestamp=parts[-1],
+                run_dir=run_dir,
+            )
+
+    # Interval-aware stable format:
+    # <base>__int_<INTERVAL>__<SYMBOL>__<INIT_MODE>__<LOSS_MODE>__lsig_<SIGNATURE>__tag_<RUN_TAG>
+    if len(parts) >= 7 and parts[-1].startswith("tag_") and parts[-2].startswith("lsig_") and parts[-6].startswith("int_"):
+        base = "__".join(parts[:-6])
+        if not base:
+            return None
+        return ParsedRunName(
+            base_run_name=base,
+            interval=parts[-6].removeprefix("int_"),
+            weight_symbol=parts[-5],
+            init_mode=parts[-4],
+            loss_mode=parts[-3],
+            loss_signature=parts[-2].removeprefix("lsig_"),
+            run_tag=parts[-1].removeprefix("tag_"),
+            timestamp=None,
+            run_dir=run_dir,
+        )
+
+    # Interval-aware format with optional trailing timestamp:
+    # <base>__int_<INTERVAL>__<SYMBOL>__<INIT_MODE>__<LOSS_MODE>__lsig_<SIGNATURE>__tag_<RUN_TAG>__<TIMESTAMP>
+    if len(parts) >= 8 and parts[-2].startswith("tag_") and parts[-3].startswith("lsig_") and parts[-7].startswith("int_"):
+        base = "__".join(parts[:-7])
+        if not base:
+            return None
+        return ParsedRunName(
+            base_run_name=base,
+            interval=parts[-7].removeprefix("int_"),
+            weight_symbol=parts[-6],
+            init_mode=parts[-5],
+            loss_mode=parts[-4],
+            loss_signature=parts[-3].removeprefix("lsig_"),
+            run_tag=parts[-2].removeprefix("tag_"),
+            timestamp=parts[-1],
+            run_dir=run_dir,
+        )
+
     # New stable format (without timestamp):
     # <base>__<SYMBOL>__<INIT_MODE>__<LOSS_MODE>__lsig_<SIGNATURE>__tag_<RUN_TAG>
     if parts[-1].startswith("tag_") and parts[-2].startswith("lsig_"):
@@ -57,6 +134,7 @@ def _parse_run_dir_name(run_dir: Path) -> ParsedRunName | None:
             return None
         return ParsedRunName(
             base_run_name=base,
+            interval=None,
             weight_symbol=parts[-5],
             init_mode=parts[-4],
             loss_mode=parts[-3],
@@ -74,6 +152,7 @@ def _parse_run_dir_name(run_dir: Path) -> ParsedRunName | None:
             return None
         return ParsedRunName(
             base_run_name=base,
+            interval=None,
             weight_symbol=parts[-6],
             init_mode=parts[-5],
             loss_mode=parts[-4],
@@ -90,6 +169,7 @@ def _parse_run_dir_name(run_dir: Path) -> ParsedRunName | None:
         return None
     return ParsedRunName(
         base_run_name=base,
+        interval=None,
         weight_symbol=parts[-5],
         init_mode=parts[-4],
         loss_mode=parts[-3],
@@ -115,6 +195,21 @@ def _manifest_loss_signature(run_dir: Path) -> str | None:
     return str(raw)
 
 
+def _manifest_interval(run_dir: Path) -> str | None:
+    manifest_path = run_dir / "run_manifest.json"
+    if not manifest_path.exists():
+        return None
+    try:
+        with manifest_path.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception:
+        return None
+    raw = payload.get("interval")
+    if raw is None:
+        return None
+    return str(raw)
+
+
 def _latest_or_specific_local_ckpt_path(
     cfg: dict[str, Any],
     weight_symbol: str | None,
@@ -123,6 +218,7 @@ def _latest_or_specific_local_ckpt_path(
     loss_signature: str | None,
     ckpt_timestamp: str | None,
     run_tag: str | None,
+    interval: str | None = None,
 ) -> tuple[Path, str]:
     ckpt_root = Path(cfg["paths"]["checkpoints_dir"])
     finetuned_ckpt_name = cfg["train"]["finetuned_ckpt_name"]
@@ -142,6 +238,10 @@ def _latest_or_specific_local_ckpt_path(
                 continue
             if weight_symbol and parsed.weight_symbol != weight_symbol:
                 continue
+            if interval:
+                resolved_interval = parsed.interval or _manifest_interval(run_dir) or "1d"
+                if resolved_interval != interval:
+                    continue
             if init_mode and parsed.init_mode != init_mode:
                 continue
             if loss_mode and _canonical_loss_mode(parsed.loss_mode) != _canonical_loss_mode(loss_mode):
@@ -168,12 +268,12 @@ def _latest_or_specific_local_ckpt_path(
         chosen = sorted(candidates, key=_candidate_key)[-1]
         return chosen.run_dir / finetuned_ckpt_name, (chosen.timestamp or "stable")
 
-    requested_filtered_search = any([weight_symbol, init_mode, loss_mode, loss_signature, ckpt_timestamp, run_tag])
+    requested_filtered_search = any([weight_symbol, interval, init_mode, loss_mode, loss_signature, ckpt_timestamp, run_tag])
     if requested_filtered_search:
         raise FileNotFoundError(
             "No local finetuned checkpoint matched filters under "
             f"{ckpt_root}. filters="
-            f"(base_run_name={base_run_name}, weight_symbol={weight_symbol}, "
+            f"(base_run_name={base_run_name}, weight_symbol={weight_symbol}, interval={interval}, "
             f"init_mode={init_mode}, loss_mode={loss_mode}, loss_signature={loss_signature}, run_tag={run_tag}, "
             f"ckpt_timestamp={ckpt_timestamp})"
         )
@@ -203,6 +303,7 @@ def _resolve_model_ref(
     loss_signature: str | None = None,
     ckpt_timestamp: str | None = None,
     run_tag: str | None = None,
+    interval: str | None = None,
 ) -> str:
     """
     Resolve model reference for Chronos2Pipeline.from_pretrained().
@@ -225,6 +326,7 @@ def _resolve_model_ref(
             loss_signature=loss_signature,
             ckpt_timestamp=ckpt_timestamp,
             run_tag=run_tag,
+            interval=interval,
         )
         return str(local_ref)
 
@@ -261,13 +363,17 @@ def generate_decision_aligned_predictions(
     data_cfg = cfg["data"]
     model_cfg = cfg["model"]
     split_cfg = cfg["split"]
+    interval = str(data_cfg.get("interval") or "unknown")
 
     df = pd.read_parquet(processed_path).sort_values([data_cfg["symbol_col"], "timestamp"]).reset_index(drop=True)
     split = split_by_time(
         df,
+        train_start=split_cfg["train_start"],
         train_end=split_cfg["train_end"],
+        val_start=split_cfg["val_start"],
         val_end=split_cfg["val_end"],
-        train_start=split_cfg.get("train_start"),
+        test_start=split_cfg["test_start"],
+        test_end=split_cfg["test_end"],
     )
 
     # Use train+val as available history; evaluate on test decision points.
@@ -286,6 +392,7 @@ def generate_decision_aligned_predictions(
             loss_signature=loss_signature,
             ckpt_timestamp=ckpt_timestamp,
             run_tag=run_tag,
+            interval=interval,
         )
 
     resolved_model_ref = _resolve_model_ref(
@@ -298,6 +405,7 @@ def generate_decision_aligned_predictions(
         loss_signature=loss_signature,
         ckpt_timestamp=ckpt_timestamp,
         run_tag=run_tag,
+        interval=interval,
     )
     pipeline = _load_pipeline(cfg, resolved_model_ref)
 
@@ -307,8 +415,7 @@ def generate_decision_aligned_predictions(
 
     rows: list[dict[str, Any]] = []
 
-    train_start = split_cfg.get("train_start")
-    train_start_ts = pd.Timestamp(train_start, tz="UTC") if train_start is not None else None
+    train_start_ts = split.train_start
 
     for symbol, g_all in df.groupby(data_cfg["symbol_col"]):
         g_all = g_all.sort_values("timestamp").reset_index(drop=True)
@@ -374,7 +481,7 @@ def generate_decision_aligned_predictions(
     # Output naming is intentionally explicit for downstream filtering.
     if model_source == "hf":
         hf_ref = model_ref or cfg["infer"].get("hf_model_id") or cfg["model"]["model_id"]
-        out_name = f"infer__hf__{_slug(str(hf_ref))}__target_{_slug(target_symbol)}__{run_ts}"
+        out_name = f"infer__hf__{_slug(str(hf_ref))}__target_{_slug(target_symbol)}__{_slug(interval)}__{run_ts}"
     else:
         w_sym = _slug(weight_symbol or "unknown")
         i_mode = _slug(init_mode or cfg["model"].get("init_mode", "unknown"))
@@ -382,7 +489,7 @@ def generate_decision_aligned_predictions(
         l_sig = _slug(loss_signature or "any")
         ckpt_ts = _slug(resolved_ckpt_timestamp)
         out_name = (
-            f"infer__ft__w_{w_sym}__i_{i_mode}__l_{l_mode}"
+            f"infer__ft__int_{_slug(interval)}__w_{w_sym}__i_{i_mode}__l_{l_mode}"
             f"__lsig_{l_sig}__ckpt_{ckpt_ts}__target_{_slug(target_symbol)}__{run_ts}"
         )
     if output_tag:
@@ -397,6 +504,7 @@ def generate_decision_aligned_predictions(
     filename = (
         f"predictions_decision_aligned"
         f"__target_{file_target}"
+        f"__{_slug(interval)}"
         f"__init_{file_init_mode}"
         f"__loss_{file_loss_mode}"
         f"__lsig_{file_loss_signature}"

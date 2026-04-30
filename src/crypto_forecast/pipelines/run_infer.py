@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from crypto_forecast.config import load_config
+from crypto_forecast.data.intervals import resolve_interval
 from crypto_forecast.models.predict import generate_decision_aligned_predictions
 
 
@@ -33,13 +34,13 @@ def _resolve_model_loading(
     return manual_source, args.model_ref
 
 
-def _resolve_processed_path(args: argparse.Namespace, cfg: dict, infer_symbol: str | None) -> Path:
+def _resolve_processed_path(args: argparse.Namespace, cfg: dict, infer_symbol: str | None, interval: str) -> Path:
     """
     Resolve inference parquet with explicit rule:
 
     - If --processed is provided, use it directly.
     - Otherwise auto-generate from infer_symbol:
-      <processed_dir>/<infer_symbol>_1d_logreturn.parquet
+      <processed_dir>/<infer_symbol>_<interval>_logreturn.parquet
     """
     if args.processed:
         return Path(args.processed)
@@ -48,7 +49,7 @@ def _resolve_processed_path(args: argparse.Namespace, cfg: dict, infer_symbol: s
             "When --processed is not provided, please set --infer-symbol "
             "(or --weight-symbol to reuse as target symbol)."
         )
-    return Path(cfg["paths"]["processed_dir"]) / f"{infer_symbol}_1d_logreturn.parquet"
+    return Path(cfg["paths"]["processed_dir"]) / f"{infer_symbol}_{interval}_logreturn.parquet"
 
 
 def main() -> None:
@@ -75,7 +76,7 @@ def main() -> None:
         default=None,
         help=(
             "Path to processed parquet for inference. "
-            "If omitted, defaults to <processed_dir>/<infer_symbol>_1d_logreturn.parquet "
+            "If omitted, defaults to <processed_dir>/<infer_symbol>_<interval>_logreturn.parquet "
             "(or weight_symbol when infer_symbol is omitted)."
         ),
     )
@@ -87,6 +88,12 @@ def main() -> None:
             "Optional suffix appended to prediction output directory name. "
             "Useful for batch experiments to avoid output overwrite."
         ),
+    )
+    parser.add_argument(
+        "--interval",
+        type=str,
+        default=None,
+        help="Optional interval override. Defaults to data.interval in config.",
     )
 
     # --------------------------
@@ -185,6 +192,8 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    interval = resolve_interval(cfg, args.interval)
+    cfg.setdefault("data", {})["interval"] = interval
 
     # Resolve model loading mode by configured priority.
     model_source, model_ref = _resolve_model_loading(args=args, cfg=cfg)
@@ -194,7 +203,7 @@ def main() -> None:
 
     # Resolve inference target parquet.
     infer_symbol = args.infer_symbol or args.weight_symbol
-    processed_path = _resolve_processed_path(args=args, cfg=cfg, infer_symbol=infer_symbol)
+    processed_path = _resolve_processed_path(args=args, cfg=cfg, infer_symbol=infer_symbol, interval=interval)
 
     out_path = generate_decision_aligned_predictions(
         cfg=cfg,

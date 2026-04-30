@@ -3,17 +3,12 @@ from __future__ import annotations
 import argparse
 
 from crypto_forecast.config import load_config
-from crypto_forecast.data.convert_market_csv import SUPPORTED_INTERVALS, convert_raw_to_processed
+from crypto_forecast.data.convert_market_csv import convert_raw_to_processed
+from crypto_forecast.data.intervals import resolve_interval
 
 
 def _resolve_interval(cfg: dict) -> str:
-    interval = cfg.get("data", {}).get("interval")
-    if interval is None:
-        raise ValueError("Missing required config value: data.interval")
-    interval = str(interval).lower()
-    if interval not in SUPPORTED_INTERVALS:
-        raise ValueError(f"Unsupported interval={interval!r}. Expected one of: {sorted(SUPPORTED_INTERVALS)}")
-    return interval
+    return resolve_interval(cfg)
 
 
 def _resolve_file_pattern(cfg: dict, interval: str) -> str:

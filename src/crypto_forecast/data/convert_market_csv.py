@@ -6,9 +6,8 @@ import numpy as np
 import pandas as pd
 
 from crypto_forecast.utils.io import ensure_dir
+from crypto_forecast.data.intervals import SUPPORTED_INTERVALS, normalize_interval
 
-
-SUPPORTED_INTERVALS = {"1d", "4h", "1h", "15m"}
 
 NUMERIC_FALLBACK_COLS = [
     "open",
@@ -100,8 +99,7 @@ def convert_raw_to_processed(
     target_price_col: str,
     keep_feature_cols: list[str],
 ) -> list[Path]:
-    if interval not in SUPPORTED_INTERVALS:
-        raise ValueError(f"Unsupported interval={interval!r}. Expected one of: {sorted(SUPPORTED_INTERVALS)}")
+    interval = normalize_interval(interval)
 
     raw_root = Path(raw_dir)
     out_root = ensure_dir(processed_dir)

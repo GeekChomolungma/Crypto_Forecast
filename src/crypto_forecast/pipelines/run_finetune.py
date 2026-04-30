@@ -5,6 +5,8 @@ from copy import deepcopy
 from pathlib import Path
 
 from crypto_forecast.config import load_config
+from crypto_forecast.data.intervals import resolve_interval
+from crypto_forecast.models.loss_switch import apply_loss_mode
 from crypto_forecast.models.train import finetune_from_processed
 
 
@@ -12,7 +14,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument("--processed", type=str, default=None)
+    parser.add_argument("--symbol", type=str, default=None)
+    parser.add_argument("--interval", type=str, default=None)
     parser.add_argument("--run-name", type=str, default=None)
+    parser.add_argument("--run-tag", type=str, default="manual")
     parser.add_argument("--init-mode", type=str, choices=["pretrained", "random"], default=None)
     parser.add_argument(
         "--loss-mode",
@@ -29,8 +34,6 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = deepcopy(load_config(args.config))
-    if args.run_name:
-        cfg["project"]["run_name"] = args.run_name
     if args.init_mode:
         cfg["model"]["init_mode"] = args.init_mode
     if args.loss_mode:
@@ -49,10 +52,25 @@ def main() -> None:
     if args.loss_directional_temperature is not None:
         cfg["model"]["loss_params"]["loss_directional_temperature"] = args.loss_directional_temperature
 
+    interval = resolve_interval(cfg, args.interval)
+    cfg.setdefault("data", {})["interval"] = interval
+    symbol = args.symbol or "BTCUSDT"
+
+    if args.run_name:
+        cfg["project"]["run_name"] = args.run_name
+    elif args.symbol or args.interval:
+        loss_state = apply_loss_mode(str(cfg["model"]["loss_mode"]), model_cfg=cfg["model"])
+        safe_tag = "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in args.run_tag.strip()) or "manual"
+        base_run_name = cfg["project"]["run_name"]
+        cfg["project"]["run_name"] = (
+            f"{base_run_name}__{symbol}__{interval}__{cfg['model']['init_mode']}"
+            f"__{cfg['model']['loss_mode']}__lsig_{loss_state.signature}__tag_{safe_tag}"
+        )
+
     processed_path = (
         Path(args.processed)
         if args.processed
-        else Path(cfg["paths"]["processed_dir"]) / "BTCUSDT_1d_logreturn.parquet"
+        else Path(cfg["paths"]["processed_dir"]) / f"{symbol}_{interval}_logreturn.parquet"
     )
 
     finetuned_path = finetune_from_processed(cfg=cfg, processed_path=processed_path)

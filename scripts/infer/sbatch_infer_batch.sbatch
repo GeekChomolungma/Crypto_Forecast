@@ -33,29 +33,86 @@ source "${ROOT_BASE}/load_exp_env.sh"
 which python
 python -c "import torch; print('torch ok', torch.__version__)"
 
-# Positional args forwarded to infer_batch.sh:
+# Positional args:
 #   $1 config_path
 #   $2 model_source (local|hf)
 #   $3 weight_symbols_csv (e.g. BTCUSDT,LTCUSDT,XRPUSDT)
 #   $4 infer_symbols_csv (e.g. BTCUSDT,LTCUSDT,XRPUSDT)
 #      one-to-one mapping: weight_symbols_csv[i] -> infer_symbols_csv[i]
-#   $5 init_mode (pretrained|random)
-#   $6 loss_mode (native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid)
-#   $7 ckpt_timestamp (latest|YYYYmmdd_HHMMSS)
-#   $8 run_tag
-#   $9 hf_model_id
-#   $10 output_tag_base
-#   $11 loss_signature (optional exact local checkpoint signature filter)
+#   $5 interval override (optional; defaults to data.interval in config)
+#   $6 init_mode (pretrained|random)
+#   $7 loss_mode (native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid)
+#   $8 ckpt_timestamp (latest|YYYYmmdd_HHMMSS)
+#   $9 run_tag
+#   $10 hf_model_id
+#   $11 output_tag_base
+#   $12 loss_signature (optional exact local checkpoint signature filter)
 cd "${PROJECT_DIR}"
-bash scripts/infer/infer_batch.sh \
-  "${1:-configs/experiment.yaml}" \
-  "${2:-local}" \
-  "${3:-BTCUSDT,ETHUSDT,DOGEUSDT,BCHUSDT,LTCUSDT,XRPUSDT}" \
-  "${4:-BTCUSDT,ETHUSDT,DOGEUSDT,BCHUSDT,LTCUSDT,XRPUSDT}" \
-  "${5:-pretrained}" \
-  "${6:-weighted_extreme_time_decay}" \
-  "${7:-latest}" \
-  "${8:-}" \
-  "${9:-amazon/chronos-2}" \
-  "${10:-batch}" \
-  "${11:-qg2_qp2_td0p8_ma1_dl0p2_dt0p1}"
+
+CONFIG_PATH="${1:-configs/experiment.yaml}"
+MODEL_SOURCE="${2:-local}"
+WEIGHT_SYMBOLS_CSV="${3:-BTCUSDT,ETHUSDT,DOGEUSDT,BCHUSDT,BNBUSDT,LTCUSDT,XRPUSDT,ZECUSDT}"
+INFER_SYMBOLS_CSV="${4:-BTCUSDT,ETHUSDT,DOGEUSDT,BCHUSDT,BNBUSDT,LTCUSDT,XRPUSDT,ZECUSDT}"
+INTERVAL_OVERRIDE="${5:-4h}"
+INIT_MODE="${6:-pretrained}"
+LOSS_MODE="${7:-native}"
+CKPT_TIMESTAMP="${8:-latest}"
+RUN_TAG="${9:-}"
+HF_MODEL_ID="${10:-amazon/chronos-2}"
+OUTPUT_TAG_BASE="${11:-batch}"
+LOSS_SIGNATURE="${12:-qg0_qp0_td0_ma0_dl0_dt0}"
+
+if [[ "${MODEL_SOURCE}" != "local" && "${MODEL_SOURCE}" != "hf" ]]; then
+  echo "[sbatch-infer-batch] invalid MODEL_SOURCE=${MODEL_SOURCE}, expected local|hf" >&2
+  exit 1
+fi
+
+IFS=',' read -r -a WEIGHT_SYMBOLS <<< "${WEIGHT_SYMBOLS_CSV}"
+IFS=',' read -r -a INFER_SYMBOLS <<< "${INFER_SYMBOLS_CSV}"
+if [[ ${#WEIGHT_SYMBOLS[@]} -eq 0 || ${#INFER_SYMBOLS[@]} -eq 0 ]]; then
+  echo "[sbatch-infer-batch] empty weight or infer symbol list" >&2
+  exit 1
+fi
+
+if [[ ${#WEIGHT_SYMBOLS[@]} -ne ${#INFER_SYMBOLS[@]} ]]; then
+  echo "[sbatch-infer-batch] list length mismatch: weight_symbols=${#WEIGHT_SYMBOLS[@]}, infer_symbols=${#INFER_SYMBOLS[@]}" >&2
+  exit 1
+fi
+
+echo "[sbatch-infer-batch] model_source=${MODEL_SOURCE}"
+echo "[sbatch-infer-batch] weight_symbols=${WEIGHT_SYMBOLS_CSV}"
+echo "[sbatch-infer-batch] infer_symbols=${INFER_SYMBOLS_CSV}"
+if [[ -n "${INTERVAL_OVERRIDE}" ]]; then
+  echo "[sbatch-infer-batch] interval_override=${INTERVAL_OVERRIDE}"
+fi
+
+for idx in "${!INFER_SYMBOLS[@]}"; do
+  weight_symbol="$(echo "${WEIGHT_SYMBOLS[$idx]}" | xargs)"
+  infer_symbol="$(echo "${INFER_SYMBOLS[$idx]}" | xargs)"
+
+  if [[ -z "${weight_symbol}" || -z "${infer_symbol}" ]]; then
+    echo "[sbatch-infer-batch] empty symbol pair at index=${idx}, skipping" >&2
+    continue
+  fi
+
+  output_tag="${OUTPUT_TAG_BASE}_${weight_symbol}_to_${infer_symbol}"
+  echo "[sbatch-infer-batch] start pair=${weight_symbol}->${infer_symbol}, output_tag=${output_tag}"
+
+  bash scripts/infer/infer_single.sh \
+    "${CONFIG_PATH}" \
+    "${MODEL_SOURCE}" \
+    "${weight_symbol}" \
+    "${infer_symbol}" \
+    "${INTERVAL_OVERRIDE}" \
+    "${INIT_MODE}" \
+    "${LOSS_MODE}" \
+    "${CKPT_TIMESTAMP}" \
+    "${RUN_TAG}" \
+    "${HF_MODEL_ID}" \
+    "${output_tag}" \
+    "${LOSS_SIGNATURE}"
+
+  echo "[sbatch-infer-batch] done pair=${weight_symbol}->${infer_symbol}"
+done
+
+echo "[sbatch-infer-batch] all done"

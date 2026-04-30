@@ -21,9 +21,12 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
     split_cfg = cfg["split"]
     split = split_by_time(
         df,
+        train_start=split_cfg["train_start"],
         train_end=split_cfg["train_end"],
+        val_start=split_cfg["val_start"],
         val_end=split_cfg["val_end"],
-        train_start=split_cfg.get("train_start"),
+        test_start=split_cfg["test_start"],
+        test_end=split_cfg["test_end"],
     )
     if len(split.train_df) == 0:
         ts_min = df["timestamp"].min() if "timestamp" in df.columns and len(df) > 0 else None
@@ -31,9 +34,12 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
         raise ValueError(
             "Train split is empty before task construction. "
             f"data_ts_range=[{ts_min}, {ts_max}], "
-            f"train_start={split_cfg.get('train_start')}, "
+            f"train_start={split_cfg['train_start']}, "
             f"train_end={split_cfg['train_end']}, "
+            f"val_start={split_cfg['val_start']}, "
             f"val_end={split_cfg['val_end']}. "
+            f"test_start={split_cfg['test_start']}, "
+            f"test_end={split_cfg['test_end']}. "
             "Please verify timestamp parsing and split boundaries."
         )
 
@@ -130,7 +136,20 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
         "loss_mode_state": loss_state.__dict__,
         "init_mode": model_cfg["init_mode"],
         "model_id": model_cfg["model_id"],
+        "interval": data_cfg.get("interval"),
+        "processed_symbol": Path(processed_path).name.split("_")[0],
         "prediction_length": model_cfg["prediction_length"],
+        "split": {
+            "train_start": split.train_start.isoformat(),
+            "train_end": split.train_end.isoformat(),
+            "val_start": split.val_start.isoformat(),
+            "val_end": split.val_end.isoformat(),
+            "test_start": split.test_start.isoformat(),
+            "test_end": split.test_end.isoformat(),
+            "n_train_rows": int(len(split.train_df)),
+            "n_val_rows": int(len(split.val_df)),
+            "n_test_rows": int(len(split.test_df)),
+        },
         "trained_at_utc": pd.Timestamp.utcnow().isoformat(),
         "wandb_enabled": bool(wandb_cfg.get("enabled", False)),
         "wandb_project": os.environ.get("WANDB_PROJECT"),

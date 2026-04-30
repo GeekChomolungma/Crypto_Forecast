@@ -15,7 +15,7 @@ universe:
   symbols: []  # empty means use all matched files
 
 data:
-  interval: "1d"  # supported: "1d" | "4h" | "1h" | "15m"
+  interval: "4h"  # supported: "1d" | "4h" | "1h" | "15m"
   timestamp_col: starttime
   symbol_col: symbol
   target_price_col: close
@@ -31,13 +31,14 @@ data:
     - tradenum
     - target_logreturn # this is target_col, so excluded from past_covariates
   min_history: 30
-  freq: "1D"
 
 split:
-  train_start: "2023-12-01"
-  train_end: "2025-08-31"
-  val_end: "2025-11-30"
-  # test is (val_end, +inf)
+  train_start: "2023-12-01 00:00:00"
+  train_end: "2025-08-31 23:59:59"
+  val_start: "2025-09-01 00:00:00"
+  val_end: "2025-11-30 23:59:59"
+  test_start: "2025-12-01 00:00:00"
+  test_end: "2026-12-31 23:59:59"
 
 model:
   model_id: amazon/chronos-2
@@ -68,7 +69,7 @@ train:
 
 wandb:
   enabled: true
-  project: crypto_forecast
+  project: crypto_chronos2_multi-interval
   entity: 574817827-university-of-amsterdam
   tags: [chronos2, logreturn, fullshot]
 

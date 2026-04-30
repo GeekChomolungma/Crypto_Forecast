@@ -15,15 +15,16 @@ PROJECT_DIR="${PROJECT_DIR:-${ROOT_BASE}/Crypto_Forecast}"
 
 CONFIG_PATH="${1:-configs/experiment.yaml}"
 SYMBOL="${2:-BTCUSDT}"
-INIT_MODE="${3:-pretrained}"   # pretrained | random
-LOSS_MODE="${4:-native}"       # native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid
-RUN_TAG="${5:-manual}"         # free-form label, e.g. v1 / expA
-LOSS_QG="${6:-2.0}"            # loss_quantile_extreme_gamma
-LOSS_QP="${7:-2.0}"            # loss_quantile_extreme_power
-LOSS_TD="${8:-0.8}"            # loss_time_decay
-LOSS_MA="${9:-1.0}"            # loss_magnitude_alpha
-LOSS_DL="${10:-0.2}"           # loss_directional_lambda
-LOSS_DT="${11:-0.1}"           # loss_directional_temperature
+INTERVAL_OVERRIDE="${3:-4h}"   # optional override; defaults to data.interval in config
+INIT_MODE="${4:-pretrained}"   # pretrained | random
+LOSS_MODE="${5:-native}"       # native|weighted_extreme_time_decay|magnitude_weighted|directional_hybrid
+RUN_TAG="${6:-manual}"         # free-form label, e.g. v1 / expA
+LOSS_QG="${7:-2.0}"            # loss_quantile_extreme_gamma
+LOSS_QP="${8:-2.0}"            # loss_quantile_extreme_power
+LOSS_TD="${9:-0.8}"            # loss_time_decay
+LOSS_MA="${10:-1.0}"           # loss_magnitude_alpha
+LOSS_DL="${11:-0.2}"           # loss_directional_lambda
+LOSS_DT="${12:-0.1}"           # loss_directional_temperature
 
 if [[ "${INIT_MODE}" != "pretrained" && "${INIT_MODE}" != "random" ]]; then
   echo "[finetune] invalid INIT_MODE=${INIT_MODE}, expected pretrained|random" >&2
@@ -37,7 +38,21 @@ fi
 
 cd "${PROJECT_DIR}"
 
-PROCESSED_PATH="${PROJECT_DIR}/data/processed/${SYMBOL}_1d_logreturn.parquet"
+RESOLVED_INTERVAL="$(python - <<'PY' "${CONFIG_PATH}" "${INTERVAL_OVERRIDE}"
+import sys, yaml
+
+supported = {"1d", "4h", "1h", "15m"}
+with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    cfg = yaml.safe_load(f)
+override = sys.argv[2].strip()
+interval = (override or cfg["data"]["interval"]).lower()
+if interval not in supported:
+    raise SystemExit(f"Unsupported interval={interval!r}, expected one of {sorted(supported)}")
+print(interval)
+PY
+)"
+
+PROCESSED_PATH="${PROJECT_DIR}/data/processed/${SYMBOL}_${RESOLVED_INTERVAL}_logreturn.parquet"
 if [[ ! -f "${PROCESSED_PATH}" ]]; then
   echo "[finetune] processed file not found: ${PROCESSED_PATH}" >&2
   exit 1
@@ -79,9 +94,10 @@ else:
     ]))
 PY
 )"
-RUN_NAME="${BASE_RUN_NAME}__${SYMBOL}__${INIT_MODE}__${LOSS_MODE}__lsig_${LOSS_SIGNATURE}__tag_${SAFE_TAG}"
+RUN_NAME="${BASE_RUN_NAME}__${SYMBOL}__${RESOLVED_INTERVAL}__${INIT_MODE}__${LOSS_MODE}__lsig_${LOSS_SIGNATURE}__tag_${SAFE_TAG}"
 
 echo "[finetune] symbol=${SYMBOL}"
+echo "[finetune] interval=${RESOLVED_INTERVAL}"
 echo "[finetune] init_mode=${INIT_MODE}, loss_mode=${LOSS_MODE}"
 echo "[finetune] loss_signature=${LOSS_SIGNATURE}"
 echo "[finetune] run_name=${RUN_NAME}"
@@ -90,6 +106,8 @@ echo "[finetune] processed=${PROCESSED_PATH}"
 python -m crypto_forecast.pipelines.run_finetune \
   --config "${CONFIG_PATH}" \
   --processed "${PROCESSED_PATH}" \
+  --symbol "${SYMBOL}" \
+  --interval "${RESOLVED_INTERVAL}" \
   --run-name "${RUN_NAME}" \
   --init-mode "${INIT_MODE}" \
   --loss-mode "${LOSS_MODE}" \

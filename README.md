@@ -47,7 +47,8 @@ bash scripts/finetuning/finetune_single.sh \
   pretrained \
   native \
   expA \
-  2.0 2.0 0.8 1.0 0.2 0.1
+  2.0 2.0 0.8 1.0 0.2 0.1 \
+  4h
 ```
 
 4. Inference (local checkpoint)
@@ -58,6 +59,7 @@ bash scripts/infer/infer_single.sh \
   local \
   BTCUSDT \
   BTCUSDT \
+  4h \
   pretrained \
   native \
   latest \
@@ -75,6 +77,7 @@ bash scripts/infer/infer_single.sh \
   hf \
   BTCUSDT \
   BTCUSDT \
+  4h \
   pretrained \
   native \
   latest \
@@ -127,11 +130,11 @@ Example:
 
 Finetune scripts generate run names in this format:
 
-`<base_run_name>__<weight_symbol>__<init_mode>__<loss_mode>__lsig_<loss_signature>__tag_<run_tag>`
+`<base_run_name>__int_<interval>__<weight_symbol>__<init_mode>__<loss_mode>__lsig_<loss_signature>__tag_<run_tag>`
 
 Example:
 
-`chronos2_logret__BTCUSDT__pretrained__native__lsig_qg0_qp0_td0_ma0_dl0_dt0__tag_expA`
+`chronos2_logret__int_4h__BTCUSDT__pretrained__native__lsig_qg0_qp0_td0_ma0_dl0_dt0__tag_expA`
 
 Saved artifacts:
 
@@ -151,15 +154,15 @@ Inference creates a directory under `outputs/predictions/` and one CSV file insi
 
 For local finetuned inference:
 
-`outputs/predictions/infer__ft__w_<weight_symbol>__i_<init_mode>__l_<loss_mode>__lsig_<loss_signature_or_any>__ckpt_<resolved_ckpt_timestamp>__target_<infer_symbol>__<infer_runtime_timestamp>[__tag_<output_tag>]`
+`outputs/predictions/infer__ft__int_<interval>__w_<weight_symbol>__i_<init_mode>__l_<loss_mode>__lsig_<loss_signature_or_any>__ckpt_<resolved_ckpt_timestamp>__target_<infer_symbol>__<infer_runtime_timestamp>[__tag_<output_tag>]`
 
 For HF zero-shot inference:
 
-`outputs/predictions/infer__hf__<hf_model_id_slug>__target_<infer_symbol>__<infer_runtime_timestamp>[__tag_<output_tag>]`
+`outputs/predictions/infer__hf__<hf_model_id_slug>__int_<interval>__target_<infer_symbol>__<infer_runtime_timestamp>[__tag_<output_tag>]`
 
 CSV filename:
 
-`predictions_decision_aligned__target_<infer_symbol>__init_<init_mode>__loss_<loss_mode>__lsig_<loss_signature_or_any>__tag_<run_tag_or_output_tag>.csv`
+`predictions_decision_aligned__int_<interval>__target_<infer_symbol>__init_<init_mode>__loss_<loss_mode>__lsig_<loss_signature_or_any>__tag_<run_tag_or_output_tag>.csv`
 
 ## End-to-end workflow
 
@@ -176,7 +179,7 @@ Training is organized around one weight symbol per run:
 Recommended training entrypoints:
 
 - Single symbol: `scripts/finetuning/finetune_single.sh`
-- Multi symbol loop: `scripts/finetuning/finetune_batch.sh`
+- Slurm batch loop: `scripts/finetuning/sbatch_finetune_batch.sbatch`
 
 ### 2) Inference workflow (single)
 
@@ -185,6 +188,7 @@ Entry: `scripts/infer/infer_single.sh`
 Local mode checkpoint selection filters:
 
 - `weight_symbol`
+- `interval`
 - `init_mode`
 - `loss_mode`
 - optional `loss_signature`
@@ -195,7 +199,7 @@ If `ckpt_timestamp=latest`, latest matched checkpoint is selected.
 
 ### 3) Inference workflow (batch)
 
-Entry: `scripts/infer/infer_batch.sh`
+Entry: `scripts/infer/sbatch_infer_batch.sbatch`
 
 Batch behavior:
 
@@ -210,23 +214,23 @@ Batch behavior:
 ```bash
 # Finetuning (single)
 bash scripts/finetuning/finetune_single.sh \
-  configs/experiment.yaml BTCUSDT pretrained native expA 2.0 2.0 0.8 1.0 0.2 0.1
+  configs/experiment.yaml BTCUSDT pretrained native expA 2.0 2.0 0.8 1.0 0.2 0.1 4h
 
 # Finetuning (batch)
-bash scripts/finetuning/finetune_batch.sh \
-  configs/experiment.yaml BTCUSDT,ETHUSDT pretrained directional_hybrid expBatch 2.0 2.0 0.8 1.0 0.2 0.1
+sbatch scripts/finetuning/sbatch_finetune_batch.sbatch \
+  configs/experiment.yaml BTCUSDT,ETHUSDT 4h pretrained directional_hybrid expBatch 2.0 2.0 0.8 1.0 0.2 0.1
 
 # Inference (local finetuned, exact signature)
 bash scripts/infer/infer_single.sh \
-  configs/experiment.yaml local BTCUSDT LTCUSDT pretrained directional_hybrid latest expBatch amazon/chronos-2 transfer_ltc qg2_qp2_td0p8_ma1_dl0p2_dt0p1
+  configs/experiment.yaml local BTCUSDT LTCUSDT 4h pretrained directional_hybrid latest expBatch amazon/chronos-2 transfer_ltc qg2_qp2_td0p8_ma1_dl0p2_dt0p1
 
 # Inference (local finetuned, no signature filter)
 bash scripts/infer/infer_single.sh \
-  configs/experiment.yaml local BTCUSDT BTCUSDT pretrained native latest expA amazon/chronos-2 infer_native
+  configs/experiment.yaml local BTCUSDT BTCUSDT 4h pretrained native latest expA amazon/chronos-2 infer_native
 
 # Inference (HF zero-shot)
 bash scripts/infer/infer_single.sh \
-  configs/experiment.yaml hf BTCUSDT BTCUSDT pretrained native latest "" amazon/chronos-2 zshot
+  configs/experiment.yaml hf BTCUSDT BTCUSDT 4h pretrained native latest "" amazon/chronos-2 zshot
 ```
 
 ## Notes

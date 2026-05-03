@@ -15,7 +15,7 @@ Place the output parquet files under `data/processed/` following the naming conv
 <SYMBOL>_<INTERVAL>_Binance_with_indicators.parquet
 ```
 
-Each parquet must contain at minimum the columns listed in `data.keep_feature_cols` in `configs/experiment.yaml`, plus `symbol`, `datetime` (datetime64, UTC), and `target_logreturn`.
+Each parquet must contain at minimum the columns listed in `data.past_covariates` in `configs/experiment.yaml`, plus `data.symbol_col`, `data.time_col` (datetime64, UTC), and `data.target_col`.
 
 ## Quick start
 

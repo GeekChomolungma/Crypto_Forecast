@@ -7,7 +7,15 @@ from typing import Any
 
 import pandas as pd
 
-from crypto_forecast.data.build_chronos_inputs import build_tasks_for_fit, split_by_time
+from crypto_forecast.data.build_chronos_inputs import (
+    build_tasks_for_fit,
+    ensure_timestamp_column,
+    get_past_covariate_cols,
+    get_target_col,
+    get_time_col,
+    split_by_time,
+    validate_required_columns,
+)
 from crypto_forecast.models.init_factory import build_pipeline
 from crypto_forecast.models.loss_switch import apply_loss_mode
 from crypto_forecast.utils.io import dump_json, ensure_dir
@@ -17,9 +25,22 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
     run_name = cfg["project"]["run_name"]
     ckpt_root = ensure_dir(Path(cfg["paths"]["checkpoints_dir"]) / run_name)
 
+    data_cfg = cfg["data"]
+    time_col = get_time_col(data_cfg)
+    target_col = get_target_col(data_cfg)
+    cov_cols = get_past_covariate_cols(data_cfg, target_col=target_col)
+
     df = pd.read_parquet(processed_path)
+    required_cols = [data_cfg["symbol_col"], target_col, *cov_cols]
     if "timestamp" not in df.columns:
-        df["timestamp"] = df["datetime"].dt.tz_localize("UTC")
+        required_cols.append(time_col)
+    validate_required_columns(
+        df,
+        required_cols,
+        processed_path=str(processed_path),
+        context="finetuning",
+    )
+    df = ensure_timestamp_column(df, time_col=time_col)
     split_cfg = cfg["split"]
     split = split_by_time(
         df,
@@ -45,14 +66,12 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
             "Please verify timestamp parsing and split boundaries."
         )
 
-    data_cfg = cfg["data"]
-    cov_cols = list(data_cfg["keep_feature_cols"])
     min_history = int(data_cfg["min_history"])
 
     train_inputs = build_tasks_for_fit(
         df=split.train_df,
         symbol_col=data_cfg["symbol_col"],
-        target_col="target_logreturn",
+        target_col=target_col,
         cov_cols=cov_cols,
         min_history=min_history,
     )
@@ -63,7 +82,7 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
             val_inputs = build_tasks_for_fit(
                 df=split.val_df,
                 symbol_col=data_cfg["symbol_col"],
-                target_col="target_logreturn",
+                target_col=target_col,
                 cov_cols=cov_cols,
                 min_history=min_history,
             )
@@ -139,6 +158,9 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
         "init_mode": model_cfg["init_mode"],
         "model_id": model_cfg["model_id"],
         "interval": data_cfg.get("interval"),
+        "time_col": time_col,
+        "target_col": target_col,
+        "past_covariates": cov_cols,
         "processed_symbol": Path(processed_path).name.split("_")[0],
         "prediction_length": model_cfg["prediction_length"],
         "split": {

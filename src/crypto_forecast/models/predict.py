@@ -11,7 +11,14 @@ import torch
 
 from chronos import Chronos2Pipeline
 
-from crypto_forecast.data.build_chronos_inputs import split_by_time
+from crypto_forecast.data.build_chronos_inputs import (
+    ensure_timestamp_column,
+    get_past_covariate_cols,
+    get_target_col,
+    get_time_col,
+    split_by_time,
+    validate_required_columns,
+)
 from crypto_forecast.utils.io import ensure_dir
 
 
@@ -371,10 +378,21 @@ def generate_decision_aligned_predictions(
     model_cfg = cfg["model"]
     split_cfg = cfg["split"]
     interval = str(data_cfg.get("interval") or "unknown")
+    time_col = get_time_col(data_cfg)
+    target_col = get_target_col(data_cfg)
+    past_covariate_cols = get_past_covariate_cols(data_cfg, target_col=target_col)
 
     df = pd.read_parquet(processed_path)
+    required_cols = [data_cfg["symbol_col"], target_col, *past_covariate_cols]
     if "timestamp" not in df.columns:
-        df["timestamp"] = df["datetime"].dt.tz_localize("UTC")
+        required_cols.append(time_col)
+    validate_required_columns(
+        df,
+        required_cols,
+        processed_path=str(processed_path),
+        context="inference",
+    )
+    df = ensure_timestamp_column(df, time_col=time_col)
     df = df.sort_values([data_cfg["symbol_col"], "timestamp"]).reset_index(drop=True)
     split = split_by_time(
         df,
@@ -445,11 +463,10 @@ def generate_decision_aligned_predictions(
 
             hist = g_all.iloc[: i + 1].copy()
 
-            target_hist = torch.tensor(hist["target_logreturn"].to_numpy(dtype="float32"))
+            target_hist = torch.tensor(hist[target_col].to_numpy(dtype="float32"))
             past_covs = {
                 c: torch.tensor(hist[c].to_numpy(dtype="float32"))
-                for c in data_cfg["keep_feature_cols"]
-                if c in hist.columns and c != "target_logreturn"
+                for c in past_covariate_cols
             }
 
             inputs = [{"target": target_hist, "past_covariates": past_covs}]
@@ -472,14 +489,13 @@ def generate_decision_aligned_predictions(
             }
 
             # Current-time (t) observable features.
-            for c in data_cfg["keep_feature_cols"]:
-                if c in g_all.columns:
-                    row[f"{c}_t"] = g_all.loc[i, c]
+            for c in past_covariate_cols:
+                row[f"{c}_t"] = g_all.loc[i, c]
             
             # Future-time (t+1, t+2, ...) predictions and ground truths.
             for step in range(1, horizon + 1):
                 row[f"pred_ret_t+{step}_mean"] = float(m_tensor[step - 1].item()) # predicted date 2025.01.02
-                row[f"y_true_ret_t+{step}"] = float(g_all.loc[i + step, "target_logreturn"]) # ground truth date 2025.01.02
+                row[f"y_true_ret_t+{step}"] = float(g_all.loc[i + step, target_col]) # ground truth date 2025.01.02
 
                 for q_idx, q in enumerate(q_levels):
                     row[f"pred_ret_t+{step}_q{q}"] = float(q_tensor[step - 1, q_idx].item())

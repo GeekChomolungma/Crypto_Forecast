@@ -11,7 +11,9 @@ paths:
 data:
   interval: "4h"  # supported: "1d" | "4h" | "1h" | "15m"
   symbol_col: symbol
-  keep_feature_cols: # all become past_covariates except target_logreturn
+  time_col: datetime
+  target_col: target_logreturn
+  past_covariates:
     - open
     - high
     - low
@@ -23,9 +25,6 @@ data:
     - st_direction
     - reversal_upper
     - reversal_lower
-
-    # target_col, so excluded from past_covariates
-    - target_logreturn 
 
   min_history: 30
 
@@ -61,7 +60,7 @@ train:
   enabled: true
   batch_size: 128
   learning_rate: 1.0e-5
-  num_steps: 1500
+  num_steps: 3000
   finetune_mode: full
   finetuned_ckpt_name: finetuned-ckpt
   remove_printer_callback: true

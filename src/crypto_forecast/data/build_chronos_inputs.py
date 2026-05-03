@@ -72,11 +72,78 @@ def split_by_time(
     )
 
 
+def get_target_col(data_cfg: dict[str, Any]) -> str:
+    target_col = data_cfg.get("target_col")
+    if not isinstance(target_col, str) or not target_col:
+        raise ValueError("Missing required config key: data.target_col")
+    return target_col
+
+
+def get_time_col(data_cfg: dict[str, Any]) -> str:
+    time_col = data_cfg.get("time_col")
+    if not isinstance(time_col, str) or not time_col:
+        raise ValueError("Missing required config key: data.time_col")
+    return time_col
+
+
+def get_past_covariate_cols(data_cfg: dict[str, Any], target_col: str) -> list[str]:
+    if "past_covariates" not in data_cfg:
+        if "keep_feature_cols" in data_cfg:
+            raise ValueError(
+                "Config key data.keep_feature_cols has been renamed to data.past_covariates. "
+                "Please update configs/experiment.yaml."
+            )
+        raise ValueError("Missing required config key: data.past_covariates")
+
+    raw_cols = data_cfg["past_covariates"]
+    if raw_cols is None:
+        return []
+    if not isinstance(raw_cols, list) or not all(isinstance(c, str) for c in raw_cols):
+        raise ValueError("Expected data.past_covariates to be a list of column names.")
+
+    duplicate_cols = sorted({c for c in raw_cols if raw_cols.count(c) > 1})
+    if duplicate_cols:
+        raise ValueError(f"Duplicate columns in data.past_covariates: {duplicate_cols}")
+    if target_col in raw_cols:
+        raise ValueError(
+            f"data.past_covariates must not include target column {target_col!r}; "
+            "it is passed to Chronos-2 as the target."
+        )
+    return list(raw_cols)
+
+
+def validate_required_columns(
+    df: pd.DataFrame,
+    required_cols: list[str],
+    *,
+    processed_path: str | None = None,
+    context: str,
+) -> None:
+    missing = [c for c in required_cols if c not in df.columns]
+    if not missing:
+        return
+
+    location = f" in {processed_path}" if processed_path else ""
+    available_preview = ", ".join(map(str, df.columns[:30]))
+    if len(df.columns) > 30:
+        available_preview += ", ..."
+    raise ValueError(
+        f"Missing required column(s) for {context}{location}: {missing}. "
+        f"Available columns: [{available_preview}]"
+    )
+
+
+def ensure_timestamp_column(df: pd.DataFrame, time_col: str) -> pd.DataFrame:
+    if "timestamp" in df.columns:
+        return df
+    df["timestamp"] = pd.to_datetime(df[time_col], utc=True)
+    return df
+
+
 def _to_task_dict(g: pd.DataFrame, target_col: str, cov_cols: list[str]) -> dict[str, Any]:
     target = g[target_col].to_numpy(dtype=np.float32)
     out: dict[str, Any] = {"target": target} # could be like (n_variates, history_length) in chronos predict() inputs dict format, but here we just use 1D as the target col is only logreturn, so (history_length,)
 
-    cov_cols = [c for c in cov_cols if c in g.columns and c != target_col]
     if cov_cols:
         out["past_covariates"] = {c: g[c].to_numpy(dtype=np.float32) for c in cov_cols} # a dict, each k-v like: {covariate name : `torch.Tensor` or `np.ndarray` of shape (history_length,)}
 

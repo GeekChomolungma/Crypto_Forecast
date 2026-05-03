@@ -52,7 +52,7 @@ print(interval)
 PY
 )"
 
-PROCESSED_PATH="${PROJECT_DIR}/data/processed/${SYMBOL}_${RESOLVED_INTERVAL}_logreturn.parquet"
+PROCESSED_PATH="${PROJECT_DIR}/data/processed/${SYMBOL}_${RESOLVED_INTERVAL}_Binance_with_indicators.parquet"
 if [[ ! -f "${PROCESSED_PATH}" ]]; then
   echo "[finetune] processed file not found: ${PROCESSED_PATH}" >&2
   exit 1

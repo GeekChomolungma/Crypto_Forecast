@@ -18,6 +18,8 @@ def finetune_from_processed(cfg: dict[str, Any], processed_path: Path) -> Path:
     ckpt_root = ensure_dir(Path(cfg["paths"]["checkpoints_dir"]) / run_name)
 
     df = pd.read_parquet(processed_path)
+    if "timestamp" not in df.columns:
+        df["timestamp"] = df["datetime"].dt.tz_localize("UTC")
     split_cfg = cfg["split"]
     split = split_by_time(
         df,

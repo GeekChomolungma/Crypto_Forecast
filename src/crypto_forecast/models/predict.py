@@ -239,7 +239,14 @@ def _latest_or_specific_local_ckpt_path(
             if weight_symbol and parsed.weight_symbol != weight_symbol:
                 continue
             if interval:
-                resolved_interval = parsed.interval or _manifest_interval(run_dir) or "1d"
+                resolved_interval = parsed.interval or _manifest_interval(run_dir)
+                if resolved_interval is None:
+                    raise ValueError(
+                        "Checkpoint candidate is missing interval metadata in both its run directory name "
+                        "and run_manifest.json. Refusing to infer its interval during interval-filtered "
+                        "inference. "
+                        f"candidate={run_dir}, requested_interval={interval}."
+                    )
                 if resolved_interval != interval:
                     continue
             if init_mode and parsed.init_mode != init_mode:
@@ -365,7 +372,10 @@ def generate_decision_aligned_predictions(
     split_cfg = cfg["split"]
     interval = str(data_cfg.get("interval") or "unknown")
 
-    df = pd.read_parquet(processed_path).sort_values([data_cfg["symbol_col"], "timestamp"]).reset_index(drop=True)
+    df = pd.read_parquet(processed_path)
+    if "timestamp" not in df.columns:
+        df["timestamp"] = df["datetime"].dt.tz_localize("UTC")
+    df = df.sort_values([data_cfg["symbol_col"], "timestamp"]).reset_index(drop=True)
     split = split_by_time(
         df,
         train_start=split_cfg["train_start"],

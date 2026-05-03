@@ -40,7 +40,7 @@ def _resolve_processed_path(args: argparse.Namespace, cfg: dict, infer_symbol: s
 
     - If --processed is provided, use it directly.
     - Otherwise auto-generate from infer_symbol:
-      <processed_dir>/<infer_symbol>_<interval>_logreturn.parquet
+      <processed_dir>/<infer_symbol>_<interval>_Binance_with_indicators.parquet
     """
     if args.processed:
         return Path(args.processed)
@@ -49,7 +49,7 @@ def _resolve_processed_path(args: argparse.Namespace, cfg: dict, infer_symbol: s
             "When --processed is not provided, please set --infer-symbol "
             "(or --weight-symbol to reuse as target symbol)."
         )
-    return Path(cfg["paths"]["processed_dir"]) / f"{infer_symbol}_{interval}_logreturn.parquet"
+    return Path(cfg["paths"]["processed_dir"]) / f"{infer_symbol}_{interval}_Binance_with_indicators.parquet"
 
 
 def main() -> None:
@@ -76,7 +76,7 @@ def main() -> None:
         default=None,
         help=(
             "Path to processed parquet for inference. "
-            "If omitted, defaults to <processed_dir>/<infer_symbol>_<interval>_logreturn.parquet "
+            "If omitted, defaults to <processed_dir>/<infer_symbol>_<interval>_Binance_with_indicators.parquet "
             "(or weight_symbol when infer_symbol is omitted)."
         ),
     )

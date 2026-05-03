@@ -70,7 +70,7 @@ def main() -> None:
     processed_path = (
         Path(args.processed)
         if args.processed
-        else Path(cfg["paths"]["processed_dir"]) / f"{symbol}_{interval}_logreturn.parquet"
+        else Path(cfg["paths"]["processed_dir"]) / f"{symbol}_{interval}_Binance_with_indicators.parquet"
     )
 
     finetuned_path = finetune_from_processed(cfg=cfg, processed_path=processed_path)

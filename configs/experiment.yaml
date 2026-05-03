@@ -4,41 +4,40 @@ project:
   run_name: chronos2_logret
 
 paths:
-  raw_dir: /gpfs/work5/0/prjs1859/market_info/cleaned
   processed_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/data/processed
   checkpoints_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/outputs/checkpoints
   predictions_dir: /gpfs/work5/0/prjs1859/Crypto_Forecast/outputs/predictions
 
-# Data conversion + modeling scope
-universe:
-  file_pattern_template: "*_{interval}_Binance_cleaned.csv"
-  symbols: []  # empty means use all matched files
-
 data:
   interval: "4h"  # supported: "1d" | "4h" | "1h" | "15m"
-  timestamp_col: starttime
   symbol_col: symbol
-  target_price_col: close
-  keep_feature_cols: # most of them are the past_covariates in chronos2
+  keep_feature_cols: # all become past_covariates except target_logreturn
     - open
     - high
     - low
     - close
     - volume
-    - quotevolume
-    - activebuyvolume
-    - activebuyquotevolume
-    - tradenum
-    - target_logreturn # this is target_col, so excluded from past_covariates
+
+    # technical indicators
+    - st_value
+    - st_direction
+    - reversal_upper
+    - reversal_lower
+
+    # target_col, so excluded from past_covariates
+    - target_logreturn 
+
   min_history: 30
 
 split:
-  train_start: "2023-12-01 00:00:00"
-  train_end: "2025-08-31 23:59:59"
-  val_start: "2025-09-01 00:00:00"
-  val_end: "2025-11-30 23:59:59"
-  test_start: "2025-12-01 00:00:00"
-  test_end: "2026-12-31 23:59:59"
+  train_start: "2022-12-01 00:00:00"
+  train_end: "2024-04-30 23:59:59"
+
+  val_start: "2024-08-01 00:00:00"
+  val_end: "2024-12-31 23:59:59"
+  
+  test_start: "2025-04-01 00:00:00"
+  test_end: "2025-10-31 23:59:59"
 
 model:
   model_id: amazon/chronos-2

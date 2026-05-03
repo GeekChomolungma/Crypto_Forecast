@@ -49,7 +49,7 @@ python -c "import torch; print('torch ok', torch.__version__)"
 cd "${PROJECT_DIR}"
 
 CONFIG_PATH="${1:-configs/experiment.yaml}"
-SYMBOLS_CSV="${2:-BTCUSDT,ETHUSDT,DOGEUSDT,BCHUSDT,BNBUSDT,LTCUSDT,XRPUSDT,ZECUSDT}"
+SYMBOLS_CSV="${2:-BTCUSDT,ETHUSDT,LTCUSDT}"
 INTERVAL_OVERRIDE="${3:-4h}"
 INIT_MODE="${4:-pretrained}"
 LOSS_MODE="${5:-native}"
